@@ -1,0 +1,42 @@
+# ── Secrets ────────────────────────────────────────────────────────────────────
+.env
+
+# ── Bot runtime state (generated at runtime, never committed) ──────────────────
+state/
+*.pid
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Live trade / equity CSVs (generated at runtime) ───────────────────────────
+trades/
+*_equity.csv
+*_trades.csv
+
+# ── Backtest output ────────────────────────────────────────────────────────────
+backtest_trades.csv
+backtest_equity_curve.csv
+sweep_results.csv
+
+# ── Python artefacts ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ── Test / tooling ─────────────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# ── IDE ────────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
