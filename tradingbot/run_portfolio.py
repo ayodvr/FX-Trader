@@ -28,7 +28,9 @@ except ImportError:
 # Each entry: (symbol, fast_ema, slow_ema, risk_per_trade)
 # Risk is lower per-symbol (0.5%) since multiple bots run simultaneously.
 PORTFOLIO = [
-    ("SOLUSDT", 50, 100, 0.0075),  # Recommended single pair: clean 1h trend moves, 0.75% risk per trade
+    ("BTCUSDT", 100, 200, 0.005),
+    ("ETHUSDT",  50, 200, 0.005),
+    ("SOLUSDT",  75, 200, 0.005),
 ]
 # ───────────────────────────────────────────────────────────────────────────────
 
