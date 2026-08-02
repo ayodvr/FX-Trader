@@ -89,8 +89,9 @@ def kill_process(pid: int):
             pass
 
 
-def start_all():
+def start_all(foreground: bool = False):
     Path("logs").mkdir(exist_ok=True)
+    procs = []
     for symbol, fast, slow, risk in PORTFOLIO:
         if is_running(symbol):
             print(f"  [{symbol}] already running — skipping")
@@ -110,6 +111,15 @@ def start_all():
         )
         pid_file(symbol).write_text(str(proc.pid))
         print(f"  [{symbol}] started  PID={proc.pid}  EMA({fast}/{slow})  risk={risk*100:.1f}%  log={log_path}")
+        procs.append(proc)
+
+    if foreground:
+        import time
+        try:
+            while True:
+                time.sleep(5)
+        except KeyboardInterrupt:
+            stop_all()
 
 
 def stop_all():
@@ -150,8 +160,9 @@ def show_status():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Portfolio bot launcher")
-    parser.add_argument("--stop",   action="store_true", help="Stop all bots")
-    parser.add_argument("--status", action="store_true", help="Show status of all bots")
+    parser.add_argument("--stop",       action="store_true", help="Stop all bots")
+    parser.add_argument("--status",     action="store_true", help="Show status of all bots")
+    parser.add_argument("--foreground", "-f", action="store_true", help="Keep parent process alive in foreground (for PM2)")
     args = parser.parse_args()
 
     if args.stop:
@@ -161,7 +172,8 @@ if __name__ == "__main__":
         show_status()
     else:
         print("\nStarting portfolio bots...")
-        start_all()
+        start_all(foreground=args.foreground)
         print("\nAll bots launched. Dashboard: http://localhost:8080\n")
         print("To stop:   python run_portfolio.py --stop")
         print("To status: python run_portfolio.py --status\n")
+
