@@ -45,20 +45,24 @@ class BybitExchange:
         return df
 
     def get_equity(self, coin: str = "USDT") -> float:
-        resp = self.client.get_wallet_balance(accountType="UNIFIED", coin=coin)
         try:
+            resp = self.client.get_wallet_balance(accountType="UNIFIED", coin=coin)
             return float(resp["result"]["list"][0]["totalEquity"])
-        except (KeyError, IndexError, ValueError):
-            logger.error("Could not parse equity from wallet response: %s", resp)
+        except Exception as e:
+            logger.warning("Could not fetch equity from exchange (%s): %s", coin, e)
             return 0.0
 
     def get_open_position(self, symbol: str) -> dict | None:
-        resp = self.client.get_positions(category=self.cfg.category, symbol=symbol)
-        positions = resp["result"]["list"]
-        for p in positions:
-            if float(p.get("size", 0)) > 0:
-                return p
-        return None
+        try:
+            resp = self.client.get_positions(category=self.cfg.category, symbol=symbol)
+            positions = resp.get("result", {}).get("list", [])
+            for p in positions:
+                if float(p.get("size", 0)) > 0:
+                    return p
+            return None
+        except Exception as e:
+            logger.warning("Could not fetch open position from exchange (%s): %s", symbol, e)
+            return None
 
     def set_leverage(self, symbol: str, leverage: int):
         try:
