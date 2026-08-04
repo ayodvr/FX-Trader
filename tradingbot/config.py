@@ -47,7 +47,7 @@ class RiskConfig:
     max_position_pct: float = float(os.getenv("MAX_POSITION_PCT", "0.25"))       # never put more than 25% of equity in one position (notional)
     max_daily_loss_pct: float = float(os.getenv("MAX_DAILY_LOSS", "0.03"))       # kill switch: stop trading for the day after -3%
     max_open_positions: int = int(os.getenv("MAX_OPEN_POSITIONS", "1"))          # this bot trades one symbol/position at a time
-    leverage: int = int(os.getenv("LEVERAGE", "2"))                              # keep conservative; raise only after live validation
+    leverage: int = int(os.getenv("LEVERAGE", "5"))                              # default 5X leverage for altcoin futures
 
 
 @dataclass
