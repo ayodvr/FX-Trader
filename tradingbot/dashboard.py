@@ -1144,10 +1144,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
             <input type="text" id="set-SOLUSDT_FAST_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
             <input type="text" id="set-SOLUSDT_SLOW_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
           </div>
-        </div>
-        <button class="btn btn-start" onclick="saveSettings()" style="justify-content:center; padding: 12px; margin-top: 10px;">💾 Save Settings</button>
-      </div>
-    </div>
   </div>
 </main>
 
@@ -1171,23 +1167,9 @@ function switchTab(sym) {
 // ── Portfolio bar ─────────────────────────────────────────────────────────────
 async function refreshPortfolioBar() {
   try {
-    const r = await fetch('/api/portfolio');
-    const data = await r.json();
+    const res = await fetch('/api/scanner/state');
+    const d = await res.json();
     const bar = document.getElementById('portfolio-bar');
-    const emaMap = {SOLUSDT:'EMA(75/200)',ETHUSDT:'EMA(50/200)',BTCUSDT:'EMA(100/200)'};
-    bar.innerHTML = data.map(d => {
-      const color = d.running ? 'var(--green)' : 'var(--red)';
-      const retTxt = d.total_return_pct != null
-        ? (d.total_return_pct >= 0 ? '+' : '') + d.total_return_pct.toFixed(2) + '%' : '—';
-      const retCol = d.total_return_pct >= 0 ? 'var(--green)' : 'var(--red)';
-      return `<div class="portfolio-card" onclick="switchTab('${d.symbol}')" style="cursor:pointer;">
-        <div class="pc-dot" style="background:${color};${d.running?'animation:pulse 2s infinite':''}"></div>
-        <div style="flex:1;">
-          <div class="pc-symbol">${d.symbol.replace('USDT','')}/USDT</div>
-          <div class="pc-ema">WR: ${d.win_rate}% | PF: ${d.profit_factor}</div>
-        </div>
-        <div class="pc-ret" style="color:${retCol}; text-align:right;">
-          ${retTxt}
           <div style="font-size:11px; color:var(--muted); text-shadow:none; font-weight:normal;">DD: ${d.drawdown}%</div>
         </div>
         <div class="pc-controls">
