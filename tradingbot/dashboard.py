@@ -344,6 +344,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         </tbody>
       </table>
     </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
+      <button class="btn btn-refresh" onclick="changePage(-1)" id="btn-prev" style="padding:6px 14px; font-size:12px;">◀ Previous</button>
+      <span id="page-info" style="font-size:12px; color:var(--muted); font-weight:600;">Page 1 of 3 (10 coins/page)</span>
+      <button class="btn btn-refresh" onclick="changePage(1)" id="btn-next" style="padding:6px 14px; font-size:12px;">Next ▶</button>
+    </div>
   </div>
 
   <!-- Quant Terminal Activity Log -->
@@ -356,6 +361,55 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 </main>
 
 <script>
+let currentPage = 1;
+const pageSize = 10;
+let lastScannedData = [];
+
+function changePage(delta) {
+  const maxPages = Math.ceil((lastScannedData.length || 30) / pageSize);
+  currentPage += delta;
+  if (currentPage < 1) currentPage = 1;
+  if (currentPage > maxPages) currentPage = maxPages;
+  renderScannerGrid();
+}
+
+function renderScannerGrid() {
+  if (!lastScannedData || lastScannedData.length === 0) return;
+  
+  const maxPages = Math.ceil(lastScannedData.length / pageSize);
+  if (currentPage > maxPages) currentPage = maxPages;
+  
+  const startIdx = (currentPage - 1) * pageSize;
+  const endIdx = startIdx + pageSize;
+  const pageItems = lastScannedData.slice(startIdx, endIdx);
+
+  let html = '';
+  pageItems.forEach((item, idx) => {
+    const globalRank = startIdx + idx + 1;
+    const sigColor = item.signal === 'long' ? 'var(--green)' : (item.signal === 'short' ? 'var(--red)' : 'var(--muted)');
+    const sigBadge = `<span style="color:${sigColor}; font-weight:700; text-transform:uppercase;">${item.signal}</span>`;
+    html += `<tr>
+      <td>#${globalRank}</td>
+      <td style="font-weight:700;">${item.symbol}</td>
+      <td>$${item.price}</td>
+      <td>${item.rvol}x</td>
+      <td>${item.rsi}</td>
+      <td>${sigBadge}</td>
+    </tr>`;
+  });
+
+  const gridEl = document.getElementById('quant-scanner-grid');
+  if (gridEl) gridEl.innerHTML = html;
+
+  const pageInfo = document.getElementById('page-info');
+  if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${maxPages} (${pageSize} coins/page)`;
+
+  const btnPrev = document.getElementById('btn-prev');
+  const btnNext = document.getElementById('btn-next');
+  if (btnPrev) btnPrev.disabled = (currentPage === 1);
+  if (btnNext) btnNext.disabled = (currentPage === maxPages);
+}
+
 async function refreshPortfolioBar() {
   try {
     const res = await fetch('/api/scanner/state');
@@ -411,21 +465,8 @@ async function refreshQuantScanner() {
     if (!data) return;
 
     if (data.scanned_data && data.scanned_data.length > 0) {
-      let html = '';
-      data.scanned_data.forEach((item, idx) => {
-        const sigColor = item.signal === 'long' ? 'var(--green)' : (item.signal === 'short' ? 'var(--red)' : 'var(--muted)');
-        const sigBadge = `<span style="color:${sigColor}; font-weight:700; text-transform:uppercase;">${item.signal}</span>`;
-        html += `<tr>
-          <td>#${idx + 1}</td>
-          <td style="font-weight:700;">${item.symbol}</td>
-          <td>$${item.price}</td>
-          <td>${item.rvol}x</td>
-          <td>${item.rsi}</td>
-          <td>${sigBadge}</td>
-        </tr>`;
-      });
-      const gridEl = document.getElementById('quant-scanner-grid');
-      if (gridEl) gridEl.innerHTML = html;
+      lastScannedData = data.scanned_data;
+      renderScannerGrid();
     }
 
     if (data.active_trades) {
