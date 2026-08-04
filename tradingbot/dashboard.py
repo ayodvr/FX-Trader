@@ -252,6 +252,16 @@ def calculate_analytics(sym):
         "drawdown": f"{dd:.1f}"
     }
 
+def read_scanner_state() -> dict:
+    sf = STATE_DIR / "scanner_state.json"
+    if sf.exists():
+        try:
+            return json.loads(sf.read_text())
+        except Exception:
+            pass
+    return {}
+
+
 @app.route("/api/portfolio")
 def api_portfolio():
     result = []
@@ -265,6 +275,23 @@ def api_portfolio():
             **analytics
         })
     return jsonify(result)
+
+
+@app.route("/api/scanner/state")
+def api_scanner_state():
+    return jsonify(read_scanner_state())
+
+
+@app.route("/api/scanner/tail_log")
+def api_scanner_tail_log():
+    log_file = LOG_DIR / "quant_scanner.log"
+    if not log_file.exists():
+        return jsonify({"lines": []})
+    try:
+        lines = log_file.read_text(errors="replace").splitlines()
+        return jsonify({"lines": lines[-150:]})
+    except Exception as e:
+        return jsonify({"lines": [f"Error reading log: {e}"]})
 
 
 @app.route("/api/webhook/tradingview", methods=["POST"])
@@ -840,7 +867,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <div class="logo-icon">📈</div>
     <div>
       <div class="logo-text">Cybrox Ultra Trader</div>
-      <div class="logo-sub">SOL · ETH · BTC &nbsp;|&nbsp; EMA Trend · 1H · Long-Only</div>
+      <div class="logo-text">Cybrox Quant Terminal</div>
+      <div class="logo-sub">Top 30 Volume Scanner &nbsp;|&nbsp; 15M Confluence Engine &nbsp;|&nbsp; Dual TP & 3H Timeout</div>
     </div>
   </div>
   <div style="display:flex;gap:10px;align-items:center;">
@@ -869,7 +897,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 
 <!-- Symbol tabs -->
 <div class="symbol-tabs" id="symbol-tabs">
-  <div class="tab active" data-sym="SOLUSDT" onclick="switchTab('SOLUSDT')">
+  <div class="tab active" data-sym="QUANT" onclick="switchTab('QUANT')">
+    🏛️ Quant Scanner (Top 30)
+  </div>
+  <div class="tab" data-sym="SOLUSDT" onclick="switchTab('SOLUSDT')">
     <span class="tab-dot" id="dot-SOLUSDT"></span> SOL/USDT
   </div>
   <div class="tab" data-sym="ETHUSDT" onclick="switchTab('ETHUSDT')">
@@ -887,8 +918,75 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 </div>
 
 <main>
+  <!-- QUANT SCANNER TAB -->
+  <div class="tab-content active" id="tab-QUANT">
+    <div class="cards">
+      <div class="card"><div class="card-label">Scanner Status</div><div class="card-value blue" id="qs-status">Active (Top 30)</div><div class="card-sub">scanning 15m candles</div></div>
+      <div class="card"><div class="card-label">BTC Regime</div><div class="card-value green" id="qs-regime">Bullish Guard</div><div class="card-sub">1h EMA alignment</div></div>
+      <div class="card"><div class="card-label">Active Scanner Trades</div><div class="card-value blue" id="qs-active-count">0 / 3</div><div class="card-sub">max 3 concurrent</div></div>
+      <div class="card"><div class="card-label">Max Trade Duration</div><div class="card-value yellow" id="qs-max-hold">3.0 Hours</div><div class="card-sub">stagnant trade auto-exit</div></div>
+    </div>
+
+    <!-- Active Scanner Positions & Timeout Tracker -->
+    <div class="section" style="margin-top:16px;">
+      <div class="section-header">
+        <div class="section-title">⏱️ Active Quant Trades & Time Decay Tracker</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Entry Price</th>
+              <th>Stop Loss</th>
+              <th>TP1 / TP2</th>
+              <th>Stagnant Age Timer</th>
+              <th>Risk Status</th>
+            </tr>
+          </thead>
+          <tbody id="quant-active-trades">
+            <tr><td colspan="7" class="empty">No active scanner positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Top 30 Market Volume Scanner Grid -->
+    <div class="section" style="margin-top:16px;">
+      <div class="section-header">
+        <div class="section-title">📊 Top-30 Market Volume Scanner Grid</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Symbol</th>
+              <th>Last Price</th>
+              <th>Smart Money RVOL</th>
+              <th>RSI (14)</th>
+              <th>15m Confluence Signal</th>
+            </tr>
+          </thead>
+          <tbody id="quant-scanner-grid">
+            <tr><td colspan="6" class="empty">Loading market scanner data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Quant Terminal Log Stream -->
+    <div class="section" style="margin-top:16px;">
+      <div class="section-header">
+        <div class="section-title">📜 Quant Terminal Activity Log</div>
+      </div>
+      <div class="log-wrap" id="quant-log-box">Initializing quant scanner log stream...</div>
+    </div>
+  </div>
+
   <!-- SOL tab -->
-  <div class="tab-content active" id="tab-SOLUSDT">
+  <div class="tab-content" id="tab-SOLUSDT">
     <div class="cards">
       <div class="card"><div class="card-label">Equity</div><div class="card-value blue" id="eq-SOLUSDT">—</div><div class="card-sub">account value</div></div>
       <div class="card"><div class="card-label">Return</div><div class="card-value" id="ret-SOLUSDT">—</div><div class="card-sub">vs start</div></div>
@@ -1282,9 +1380,83 @@ async function loadSymbolData(sym) {
   await Promise.all([fetchStatus(sym),fetchEquity(sym),fetchTrades(sym),fetchLogs(sym)]);
 }
 
+async function refreshQuantScanner() {
+  try {
+    const res = await fetch('/api/scanner/state');
+    const data = await res.json();
+    if (!data) return;
+
+    if (data.scanned_data && data.scanned_data.length > 0) {
+      let html = '';
+      data.scanned_data.forEach((item, idx) => {
+        const sigColor = item.signal === 'long' ? 'var(--green)' : (item.signal === 'short' ? 'var(--red)' : 'var(--muted)');
+        const sigBadge = `<span style="color:${sigColor}; font-weight:700; text-transform:uppercase;">${item.signal}</span>`;
+        html += `<tr>
+          <td>#${idx + 1}</td>
+          <td style="font-weight:700;">${item.symbol}</td>
+          <td>$${item.price}</td>
+          <td>${item.rvol}x</td>
+          <td>${item.rsi}</td>
+          <td>${sigBadge}</td>
+        </tr>`;
+      });
+      const gridEl = document.getElementById('quant-scanner-grid');
+      if (gridEl) gridEl.innerHTML = html;
+    }
+
+    if (data.active_trades) {
+      let activeHtml = '';
+      const keys = Object.keys(data.active_trades);
+      if (keys.length === 0) {
+        activeHtml = '<tr><td colspan="7" class="empty">No active scanner positions</td></tr>';
+      } else {
+        keys.forEach(sym => {
+          const t = data.active_trades[sym];
+          const entryTime = new Date(t.entry_time);
+          const now = new Date();
+          const diffMins = Math.floor((now - entryTime) / 60000);
+          const hrs = Math.floor(diffMins / 60);
+          const mins = diffMins % 60;
+          const tp1Badge = t.tp1_hit ? '<span style="color:var(--green); font-weight:700;">TP1 HIT (RISK-FREE SL)</span>' : 'ACTIVE';
+          activeHtml += `<tr>
+            <td style="font-weight:700;">${sym}</td>
+            <td style="color:${t.side==='Buy'?'var(--green)':'var(--red)'}; font-weight:700;">${t.side}</td>
+            <td>$${t.entry_price}</td>
+            <td>$${t.stop_price}</td>
+            <td>$${t.tp1} / $${t.tp2}</td>
+            <td><span class="badge" style="background:rgba(255,107,0,0.2); color:var(--orange); font-weight:700;">${hrs}h ${mins}m / 3h auto-close</span></td>
+            <td>${tp1Badge}</td>
+          </tr>`;
+        });
+      }
+      const activeEl = document.getElementById('quant-active-trades');
+      if (activeEl) activeEl.innerHTML = activeHtml;
+      
+      const countEl = document.getElementById('qs-active-count');
+      if (countEl) countEl.textContent = `${keys.length} / 3`;
+    }
+  } catch(e) {}
+}
+
+async function refreshQuantLogs() {
+  try {
+    const res = await fetch('/api/scanner/tail_log');
+    const data = await res.json();
+    if (data && data.lines && data.lines.length > 0) {
+      const logEl = document.getElementById('quant-log-box');
+      if (logEl) {
+        logEl.textContent = data.lines.join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+  } catch(e) {}
+}
+
 async function refreshAll() {
   await refreshPortfolioBar();
-  if (activeTab !== 'SETTINGS' && activeTab !== 'BACKTEST') {
+  await refreshQuantScanner();
+  await refreshQuantLogs();
+  if (activeTab !== 'SETTINGS' && activeTab !== 'BACKTEST' && activeTab !== 'QUANT') {
     await loadSymbolData(activeTab);
   }
   await fetchPositions();

@@ -44,6 +44,24 @@ class BybitExchange:
         df = df.set_index("timestamp").sort_index()  # Bybit returns newest-first
         return df
 
+    def get_top_symbols(self, limit: int = 30) -> list[str]:
+        """Fetch top N USDT linear perpetual symbols ranked by 24h turnover/volume."""
+        try:
+            resp = self.client.get_tickers(category=self.cfg.category)
+            tickers = resp.get("result", {}).get("list", [])
+            # Filter for USDT linear contracts, exclude USDC / Inverse
+            usdt_tickers = [
+                t for t in tickers
+                if t.get("symbol", "").endswith("USDT") and not t.get("symbol", "").startswith("USDC")
+            ]
+            # Sort descending by 24h turnover (turnover24h)
+            usdt_tickers.sort(key=lambda x: float(x.get("turnover24h", 0)), reverse=True)
+            symbols = [t["symbol"] for t in usdt_tickers[:limit]]
+            return symbols if symbols else ["BTCUSDT", "ETHUSDT", "SOLUSDT", "NEARUSDT", "AVAXUSDT"]
+        except Exception as e:
+            logger.warning("Failed to fetch top tickers from exchange: %s", e)
+            return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "NEARUSDT", "AVAXUSDT"]
+
     def get_equity(self, coin: str = "USDT") -> float:
         try:
             resp = self.client.get_wallet_balance(accountType="UNIFIED", coin=coin)
