@@ -18,6 +18,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Add project root to sys.path so modules import reliably regardless of CWD
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
 from config import CONFIG
 from exchange.bybit_client import BybitExchange
 from strategy.quant_strategy import generate_quant_signal, Signal
