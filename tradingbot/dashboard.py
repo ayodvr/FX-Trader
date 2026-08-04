@@ -88,13 +88,14 @@ def read_scanner_state() -> dict:
             state.update(json.loads(sf.read_text()))
         except Exception:
             pass
-    try:
-        bybit = BybitExchange(CONFIG.exchange)
-        eq = bybit.get_equity("USDT")
-        if eq > 0:
-            state["account_balance"] = eq
-    except Exception:
-        pass
+    if not state["dry_run"]:
+        try:
+            bybit = BybitExchange(CONFIG.exchange)
+            eq = bybit.get_equity("USDT")
+            if eq > 0:
+                state["account_balance"] = eq
+        except Exception:
+            pass
     return state
 
 

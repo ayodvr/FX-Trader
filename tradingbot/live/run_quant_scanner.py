@@ -67,9 +67,8 @@ class QuantScannerBot:
         self.max_active_trades = int(os.getenv("MAX_ACTIVE_TRADES", "3"))
 
         # Active trade tracking dictionary:
-        # { symbol: { "entry_price": float, "qty": float, "side": "Buy"/"Sell", "entry_time": datetime,
-        #             "stop_price": float, "tp1": float, "tp2": float, "tp1_hit": bool } }
         self.active_scanner_trades = {}
+        self.paper_balance = 10000.0
 
         mode = "DRY RUN (Paper Trading)" if CONFIG.dry_run else "LIVE TRADING"
         net  = "TESTNET" if CONFIG.exchange.testnet else "MAINNET"
@@ -92,6 +91,7 @@ class QuantScannerBot:
             "dry_run": CONFIG.dry_run,
             "testnet": CONFIG.exchange.testnet,
             "top_symbols": top_symbols,
+            "account_balance": round(self.paper_balance, 2),
             "active_trades": {
                 sym: {
                     "side": data["side"],
