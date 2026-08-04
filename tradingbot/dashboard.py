@@ -74,19 +74,28 @@ def pwa_manifest():
 
 def read_scanner_state() -> dict:
     sf = STATE_DIR / "scanner_state.json"
-    if sf.exists():
-        try:
-            return json.loads(sf.read_text())
-        except Exception:
-            pass
-    return {
+    state = {
         "last_update": datetime.now().isoformat(),
         "dry_run": os.getenv("DRY_RUN", "true").lower() == "true",
         "testnet": os.getenv("BYBIT_TESTNET", "true").lower() == "true",
         "top_symbols": [],
         "active_trades": {},
         "scanned_data": [],
+        "account_balance": 10000.0,
     }
+    if sf.exists():
+        try:
+            state.update(json.loads(sf.read_text()))
+        except Exception:
+            pass
+    try:
+        bybit = BybitExchange(CONFIG.exchange)
+        eq = bybit.get_equity("USDT")
+        if eq > 0:
+            state["account_balance"] = eq
+    except Exception:
+        pass
+    return state
 
 
 # ── API Routes ────────────────────────────────────────────────────────────────
@@ -391,8 +400,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 
 <main>
   <div class="cards">
+    <div class="card"><div class="card-label">Account Equity</div><div class="card-value green" id="qs-balance">$10,000.00</div><div class="card-sub" id="qs-pnl">Real-time wallet balance</div></div>
     <div class="card"><div class="card-label">Scanner Status</div><div class="card-value blue" id="qs-status">Active (Top 30)</div><div class="card-sub">scanning 15m candles</div></div>
-    <div class="card"><div class="card-label">BTC Regime Guard</div><div class="card-value green" id="qs-regime">Bullish Alignment</div><div class="card-sub">1h EMA trend check</div></div>
+    <div class="card"><div class="card-label">BTC Regime Guard</div><div class="card-value green" id="qs-regime">Bullish Guard</div><div class="card-sub">1h EMA trend check</div></div>
     <div class="card"><div class="card-label">Active Quant Trades</div><div class="card-value blue" id="qs-active-count">0 / 3</div><div class="card-sub">max 3 concurrent</div></div>
     <div class="card"><div class="card-label">Time Decay Timeout</div><div class="card-value yellow" id="qs-max-hold">3.0 Hours</div><div class="card-sub">stagnant trade auto-exit</div></div>
   </div>
@@ -563,6 +573,13 @@ async function refreshQuantScanner() {
     const res = await fetch('/api/scanner/state');
     const data = await res.json();
     if (!data) return;
+
+    if (data.account_balance !== undefined) {
+      const balEl = document.getElementById('qs-balance');
+      if (balEl) {
+        balEl.textContent = '$' + parseFloat(data.account_balance).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      }
+    }
 
     if (data.scanned_data && data.scanned_data.length > 0) {
       lastScannedData = data.scanned_data;
