@@ -26,15 +26,15 @@ class ExchangeConfig:
 @dataclass
 class StrategyConfig:
     symbol: str = os.getenv("SYMBOL", "BTCUSDT")
-    timeframe: str = os.getenv("TIMEFRAME", "60")  # minutes (Bybit kline interval) — 1h candles
-    fast_ema: int = int(os.getenv("FAST_EMA", "100"))
-    slow_ema: int = int(os.getenv("SLOW_EMA", "200"))
+    timeframe: str = os.getenv("TIMEFRAME", "15")  # minutes (Bybit kline interval) — 15m intraday candles
+    fast_ema: int = int(os.getenv("FAST_EMA", "9"))
+    slow_ema: int = int(os.getenv("SLOW_EMA", "21"))
     atr_period: int = int(os.getenv("ATR_PERIOD", "14"))
     atr_stop_mult: float = float(os.getenv("ATR_STOP_MULT", "2.0"))      # stop-loss = entry -/+ ATR * mult
     atr_trail_mult: float = float(os.getenv("ATR_TRAIL_MULT", "3.0"))    # trailing stop distance
-    min_adx: float = float(os.getenv("MIN_ADX", "20.0"))                 # only enter when ADX >= this (0 = filter off); filters choppy markets
-    min_volume_spike: float = float(os.getenv("MIN_VOLUME_SPIKE", "1.5"))# only enter when volume is >= 1.5x the 20-candle average
-    long_only: bool = os.getenv("LONG_ONLY", "true").lower() == "true"   # BTC has upward bias; short signals often fight the trend
+    min_adx: float = float(os.getenv("MIN_ADX", "10.0"))                 # filter choppy markets
+    min_volume_spike: float = float(os.getenv("MIN_VOLUME_SPIKE", "1.0"))# 1.0 = off / disabled
+    long_only: bool = os.getenv("LONG_ONLY", "false").lower() == "true"   # allow both Long and Short trades
 
 
 @dataclass
@@ -59,7 +59,7 @@ class BotConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     alerts: AlertConfig = field(default_factory=AlertConfig)
-    poll_interval_sec: int = 120    # how often the live loop checks for a new closed candle (2 min is plenty for 1h candles)
+    poll_interval_sec: int = 30     # check every 30 seconds for closed 15m candles
     dry_run: bool = os.getenv("DRY_RUN", "true").lower() == "true"  # paper-trade mode, no real orders
 
 
