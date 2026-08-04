@@ -895,19 +895,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 
-<!-- Symbol tabs -->
-<div class="symbol-tabs" id="symbol-tabs">
-  <div class="tab active" data-sym="QUANT" onclick="switchTab('QUANT')">
-    🏛️ Quant Scanner (Top 30)
-  </div>
-  <div class="tab" data-sym="BACKTEST" onclick="switchTab('BACKTEST')" style="margin-left: auto;">
-    🧪 Backtester
-  </div>
-  <div class="tab" data-sym="SETTINGS" onclick="switchTab('SETTINGS')">
-    ⚙️ Settings
-  </div>
-</div>
-
 <main>
   <!-- QUANT SCANNER TAB -->
   <div class="tab-content active" id="tab-QUANT">
@@ -976,87 +963,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- BACKTEST tab -->
-  <div class="tab-content" id="tab-BACKTEST">
-    <div class="section" style="padding: 24px;">
-      <div class="section-header"><div class="section-title">Web-Based Backtester</div></div>
-      <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Symbol</label>
-          <select id="bt-symbol" onchange="updateBacktestDefaults()" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; cursor:pointer;">
-            <option value="BTCUSDT">BTCUSDT</option>
-            <option value="ETHUSDT">ETHUSDT</option>
-            <option value="SOLUSDT">SOLUSDT</option>
-          </select>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Fast EMA</label>
-          <input type="number" id="bt-fast" value="100" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; width:80px;">
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Slow EMA</label>
-          <input type="number" id="bt-slow" value="200" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; width:80px;">
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Candles (1H)</label>
-          <input type="number" id="bt-limit" value="1000" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; width:100px;">
-        </div>
-        <div style="display:flex; flex-direction:column; justify-content:flex-end;">
-          <button class="btn btn-start" onclick="runBacktest()" id="btn-run-bt">▶ Run Backtest</button>
-        </div>
-      </div>
-      <div class="chart-wrap" style="height: 350px; margin-bottom: 24px;"><canvas id="chart-BACKTEST"></canvas></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Time</th><th>Action</th><th>Side</th><th>Price</th><th>PnL</th></tr></thead>
-          <tbody id="tb-BACKTEST"><tr><td colspan="5" class="empty">Run a backtest to see trades</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- SETTINGS tab -->
-  <div class="tab-content" id="tab-SETTINGS">
-    <div class="section" style="padding: 24px; max-width: 600px; margin: 0 auto;">
-      <div class="section-header"><div class="section-title">Live Configuration</div></div>
-      <div style="display:flex; flex-direction:column; gap: 20px; margin-top: 20px;">
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Testnet Enabled (true/false)</label>
-          <input type="text" id="set-testnet" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px;">
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Risk Per Trade (e.g., 0.0075 for 0.75%)</label>
-          <input type="text" id="set-risk" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px;">
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Min ADX Filter (e.g., 20.0)</label>
-          <input type="text" id="set-adx" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px;">
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">Min Volume Spike Multiplier (e.g., 1.5)</label>
-          <input type="text" id="set-volume" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px;">
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">BTCUSDT EMAs (Fast, Slow)</label>
-          <div style="display:flex; gap:10px;">
-            <input type="text" id="set-BTCUSDT_FAST_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
-            <input type="text" id="set-BTCUSDT_SLOW_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
-          </div>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">ETHUSDT EMAs (Fast, Slow)</label>
-          <div style="display:flex; gap:10px;">
-            <input type="text" id="set-ETHUSDT_FAST_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
-            <input type="text" id="set-ETHUSDT_SLOW_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
-          </div>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="color:var(--muted); font-size:12px;">SOLUSDT EMAs (Fast, Slow)</label>
-          <div style="display:flex; gap:10px;">
-            <input type="text" id="set-SOLUSDT_FAST_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
-            <input type="text" id="set-SOLUSDT_SLOW_EMA" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:6px; flex:1;">
-          </div>
-  </div>
 </main>
 
 <script>
