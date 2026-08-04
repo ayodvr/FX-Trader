@@ -900,15 +900,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="tab active" data-sym="QUANT" onclick="switchTab('QUANT')">
     🏛️ Quant Scanner (Top 30)
   </div>
-  <div class="tab" data-sym="SOLUSDT" onclick="switchTab('SOLUSDT')">
-    <span class="tab-dot" id="dot-SOLUSDT"></span> SOL/USDT
-  </div>
-  <div class="tab" data-sym="ETHUSDT" onclick="switchTab('ETHUSDT')">
-    <span class="tab-dot" id="dot-ETHUSDT"></span> ETH/USDT
-  </div>
-  <div class="tab" data-sym="BTCUSDT" onclick="switchTab('BTCUSDT')">
-    <span class="tab-dot" id="dot-BTCUSDT"></span> BTC/USDT
-  </div>
   <div class="tab" data-sym="BACKTEST" onclick="switchTab('BACKTEST')" style="margin-left: auto;">
     🧪 Backtester
   </div>
@@ -982,85 +973,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <div class="section-title">📜 Quant Terminal Activity Log</div>
       </div>
       <div class="log-wrap" id="quant-log-box">Initializing quant scanner log stream...</div>
-    </div>
-  </div>
-
-  <!-- SOL tab -->
-  <div class="tab-content" id="tab-SOLUSDT">
-    <div class="cards">
-      <div class="card"><div class="card-label">Equity</div><div class="card-value blue" id="eq-SOLUSDT">—</div><div class="card-sub">account value</div></div>
-      <div class="card"><div class="card-label">Return</div><div class="card-value" id="ret-SOLUSDT">—</div><div class="card-sub">vs start</div></div>
-      <div class="card"><div class="card-label">Position</div><div class="card-value" id="pos-SOLUSDT">Flat</div><div class="card-sub" id="pos-sub-SOLUSDT">no open trade</div></div>
-      <div class="card"><div class="card-label">Trades</div><div class="card-value blue" id="trd-SOLUSDT">—</div><div class="card-sub">closed</div></div>
-      <div class="card"><div class="card-label">Win Rate</div><div class="card-value" id="wr-SOLUSDT">—</div><div class="card-sub">target ≥ 40%</div></div>
-      <div class="card"><div class="card-label">Max Drawdown</div><div class="card-value red" id="dd-SOLUSDT">—</div><div class="card-sub">peak-to-trough</div></div>
-    </div>
-    <div class="section" style="padding:16px 22px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <div class="controls">
-          <button class="btn btn-start" id="start-SOLUSDT" onclick="startBot('SOLUSDT')">▶ Start SOL Bot</button>
-          <button class="btn btn-stop"  id="stop-SOLUSDT"  onclick="stopBot('SOLUSDT')" disabled>⏹ Stop SOL Bot</button>
-        </div>
-        <div class="status-pill stopped" id="badge-SOLUSDT"><span class="s-dot"></span><span id="badge-txt-SOLUSDT">Stopped</span></div>
-      </div>
-    </div>
-    <div class="section"><div class="section-header"><div class="section-title">Equity Curve</div><div class="section-badge">SOLUSDT · EMA(75/200)</div></div><div class="chart-wrap"><canvas id="chart-SOLUSDT"></canvas></div></div>
-    <div class="two-col">
-      <div class="section"><div class="section-header"><div class="section-title">Recent Trades</div><div class="section-badge" id="tc-SOLUSDT">0 trades</div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Side</th><th>Price</th><th>PnL</th></tr></thead><tbody id="tb-SOLUSDT"><tr><td colspan="5" class="empty">No trades yet</td></tr></tbody></table></div></div>
-      <div class="section"><div class="section-header"><div class="section-title">Live Log</div><div class="section-badge">SOLUSDT.log</div></div><div class="log-wrap" id="log-SOLUSDT"><div class="log-line">Start the bot to see logs...</div></div></div>
-    </div>
-  </div>
-
-  <!-- ETH tab -->
-  <div class="tab-content" id="tab-ETHUSDT">
-    <div class="cards">
-      <div class="card"><div class="card-label">Equity</div><div class="card-value blue" id="eq-ETHUSDT">—</div><div class="card-sub">account value</div></div>
-      <div class="card"><div class="card-label">Return</div><div class="card-value" id="ret-ETHUSDT">—</div><div class="card-sub">vs start</div></div>
-      <div class="card"><div class="card-label">Position</div><div class="card-value" id="pos-ETHUSDT">Flat</div><div class="card-sub" id="pos-sub-ETHUSDT">no open trade</div></div>
-      <div class="card"><div class="card-label">Trades</div><div class="card-value blue" id="trd-ETHUSDT">—</div><div class="card-sub">closed</div></div>
-      <div class="card"><div class="card-label">Win Rate</div><div class="card-value" id="wr-ETHUSDT">—</div><div class="card-sub">target ≥ 40%</div></div>
-      <div class="card"><div class="card-label">Max Drawdown</div><div class="card-value red" id="dd-ETHUSDT">—</div><div class="card-sub">peak-to-trough</div></div>
-    </div>
-    <div class="section" style="padding:16px 22px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <div class="controls">
-          <button class="btn btn-start" id="start-ETHUSDT" onclick="startBot('ETHUSDT')">▶ Start ETH Bot</button>
-          <button class="btn btn-stop"  id="stop-ETHUSDT"  onclick="stopBot('ETHUSDT')" disabled>⏹ Stop ETH Bot</button>
-        </div>
-        <div class="status-pill stopped" id="badge-ETHUSDT"><span class="s-dot"></span><span id="badge-txt-ETHUSDT">Stopped</span></div>
-      </div>
-    </div>
-    <div class="section"><div class="section-header"><div class="section-title">Equity Curve</div><div class="section-badge">ETHUSDT · EMA(50/200)</div></div><div class="chart-wrap"><canvas id="chart-ETHUSDT"></canvas></div></div>
-    <div class="two-col">
-      <div class="section"><div class="section-header"><div class="section-title">Recent Trades</div><div class="section-badge" id="tc-ETHUSDT">0 trades</div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Side</th><th>Price</th><th>PnL</th></tr></thead><tbody id="tb-ETHUSDT"><tr><td colspan="5" class="empty">No trades yet</td></tr></tbody></table></div></div>
-      <div class="section"><div class="section-header"><div class="section-title">Live Log</div><div class="section-badge">ETHUSDT.log</div></div><div class="log-wrap" id="log-ETHUSDT"><div class="log-line">Start the bot to see logs...</div></div></div>
-    </div>
-  </div>
-
-  <!-- BTC tab -->
-  <div class="tab-content" id="tab-BTCUSDT">
-    <div class="cards">
-      <div class="card"><div class="card-label">Equity</div><div class="card-value blue" id="eq-BTCUSDT">—</div><div class="card-sub">account value</div></div>
-      <div class="card"><div class="card-label">Return</div><div class="card-value" id="ret-BTCUSDT">—</div><div class="card-sub">vs start</div></div>
-      <div class="card"><div class="card-label">Position</div><div class="card-value" id="pos-BTCUSDT">Flat</div><div class="card-sub" id="pos-sub-BTCUSDT">no open trade</div></div>
-      <div class="card"><div class="card-label">Trades</div><div class="card-value blue" id="trd-BTCUSDT">—</div><div class="card-sub">closed</div></div>
-      <div class="card"><div class="card-label">Win Rate</div><div class="card-value" id="wr-BTCUSDT">—</div><div class="card-sub">target ≥ 40%</div></div>
-      <div class="card"><div class="card-label">Max Drawdown</div><div class="card-value red" id="dd-BTCUSDT">—</div><div class="card-sub">peak-to-trough</div></div>
-    </div>
-    <div class="section" style="padding:16px 22px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <div class="controls">
-          <button class="btn btn-start" id="start-BTCUSDT" onclick="startBot('BTCUSDT')">▶ Start BTC Bot</button>
-          <button class="btn btn-stop"  id="stop-BTCUSDT"  onclick="stopBot('BTCUSDT')" disabled>⏹ Stop BTC Bot</button>
-        </div>
-        <div class="status-pill stopped" id="badge-BTCUSDT"><span class="s-dot"></span><span id="badge-txt-BTCUSDT">Stopped</span></div>
-      </div>
-    </div>
-    <div class="section"><div class="section-header"><div class="section-title">Equity Curve</div><div class="section-badge">BTCUSDT · EMA(100/200)</div></div><div class="chart-wrap"><canvas id="chart-BTCUSDT"></canvas></div></div>
-    <div class="two-col">
-      <div class="section"><div class="section-header"><div class="section-title">Recent Trades</div><div class="section-badge" id="tc-BTCUSDT">0 trades</div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Side</th><th>Price</th><th>PnL</th></tr></thead><tbody id="tb-BTCUSDT"><tr><td colspan="5" class="empty">No trades yet</td></tr></tbody></table></div></div>
-      <div class="section"><div class="section-header"><div class="section-title">Live Log</div><div class="section-badge">BTCUSDT.log</div></div><div class="log-wrap" id="log-BTCUSDT"><div class="log-line">Start the bot to see logs...</div></div></div>
-    </div>
     </div>
   </div>
 
