@@ -265,6 +265,31 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .btn-refresh:hover { border-color: var(--accent); color: var(--accent); }
   .empty { text-align: center; padding: 30px; color: var(--muted); font-size: 14px; }
   .refresh-info { font-size: 12px; color: var(--muted); }
+
+  /* Mobile Responsiveness */
+  @media (max-width: 768px) {
+    header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      gap: 10px;
+    }
+    .logo-text { font-size: 18px; white-space: nowrap; }
+    .logo-sub { font-size: 11px; }
+    .portfolio-bar { padding: 16px; grid-template-columns: 1fr; }
+    main { padding: 16px; }
+    .cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { padding: 14px; }
+    .card-value { font-size: 20px; }
+    .section { padding: 16px; border-radius: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -274,10 +299,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <div class="logo-icon">🏛️</div>
     <div>
       <div class="logo-text">Cybrox Quant Terminal</div>
-      <div class="logo-sub">Top 30 Volume Scanner &nbsp;|&nbsp; 15M Confluence Engine &nbsp;|&nbsp; Dual TP & 3H Timeout</div>
+      <div class="logo-sub">Top 30 Volume Scanner &nbsp;|&nbsp; 15M Confluence &nbsp;|&nbsp; Dual TP & 3H Timeout</div>
     </div>
   </div>
-  <div style="display:flex;gap:10px;align-items:center;">
+  <div class="header-actions">
     <button class="btn" onclick="emergencyKillSwitch()" style="background:var(--red);color:white;box-shadow: 0 0 15px rgba(255, 51, 102, 0.4);">🚨 HALT ALL</button>
     <button class="btn btn-refresh" onclick="refreshAll()">↻ Refresh</button>
     <span class="refresh-info" id="last-update">—</span>
