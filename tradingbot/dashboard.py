@@ -96,6 +96,46 @@ def api_scanner_state():
     return jsonify(read_scanner_state())
 
 
+ENV_FILE = BASE_DIR / ".env"
+
+@app.route("/api/settings", methods=["GET", "POST"])
+def api_settings():
+    if request.method == "GET":
+        return jsonify({
+            "RISK_PER_TRADE": os.getenv("RISK_PER_TRADE", "0.0075"),
+            "LEVERAGE": os.getenv("LEVERAGE", "5"),
+            "MAX_HOLD_HOURS": os.getenv("MAX_HOLD_HOURS", "3.0"),
+            "MAX_OPEN_POSITIONS": os.getenv("MAX_OPEN_POSITIONS", "3"),
+            "BYBIT_TESTNET": os.getenv("BYBIT_TESTNET", "true"),
+            "DRY_RUN": os.getenv("DRY_RUN", "true"),
+        })
+    
+    data = request.json or {}
+    try:
+        lines = []
+        if ENV_FILE.exists():
+            lines = ENV_FILE.read_text().splitlines()
+            
+        kv_map = {}
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                kv_map[k.strip()] = v.strip()
+                
+        for key in ["RISK_PER_TRADE", "LEVERAGE", "MAX_HOLD_HOURS", "MAX_OPEN_POSITIONS", "BYBIT_TESTNET", "DRY_RUN"]:
+            if key in data:
+                val = str(data[key]).strip()
+                kv_map[key] = val
+                os.environ[key] = val
+                
+        new_lines = [f"{k}={v}" for k, v in kv_map.items()]
+        ENV_FILE.write_text("\n".join(new_lines) + "\n")
+        return jsonify({"ok": True, "msg": "Settings saved successfully!"})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route("/api/scanner/tail_log")
 def api_scanner_tail_log():
     log_file = LOG_DIR / "quant_scanner.log"
@@ -303,11 +343,46 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
   <div class="header-actions">
+    <button class="btn btn-refresh" onclick="toggleSettingsPanel()" style="border-color:var(--accent); color:var(--accent);">⚙️ Settings</button>
     <button class="btn" onclick="emergencyKillSwitch()" style="background:var(--red);color:white;box-shadow: 0 0 15px rgba(255, 51, 102, 0.4);">🚨 HALT ALL</button>
     <button class="btn btn-refresh" onclick="refreshAll()">↻ Refresh</button>
     <span class="refresh-info" id="last-update">—</span>
   </div>
 </header>
+
+<!-- Collapsible Live Settings Panel -->
+<div id="settings-panel" style="display:none; background: var(--surface2); border-bottom: 1px solid var(--border); padding: 20px 28px; backdrop-filter: blur(16px);">
+  <div style="max-width:1200px; margin:0 auto;">
+    <div style="font-size:16px; font-weight:700; margin-bottom:14px; color:var(--accent);">⚙️ Live Bot Configuration Panel</div>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:16px;">
+      <div>
+        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:6px;">Risk Per Trade (e.g. 0.0075 = 0.75%)</label>
+        <input type="text" id="cfg-risk" value="0.0075" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:14px;">
+      </div>
+      <div>
+        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:6px;">Futures Leverage</label>
+        <select id="cfg-leverage" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:14px;">
+          <option value="2">2X Leverage</option>
+          <option value="5" selected>5X Leverage</option>
+          <option value="10">10X Leverage</option>
+          <option value="20">20X Leverage</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:6px;">Stagnant Timeout (Hours)</label>
+        <input type="text" id="cfg-hold" value="3.0" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:14px;">
+      </div>
+      <div>
+        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:6px;">Max Concurrent Trades</label>
+        <input type="text" id="cfg-positions" value="3" style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:14px;">
+      </div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:10px;">
+      <button class="btn btn-refresh" onclick="toggleSettingsPanel()">Cancel</button>
+      <button class="btn" onclick="saveWebSettings()" style="background:linear-gradient(135deg, var(--accent2), var(--accent)); color:#000; font-weight:800; box-shadow:0 0 15px rgba(0,240,255,0.4);">💾 Save & Apply Live</button>
+    </div>
+  </div>
+</div>
 
 <!-- Portfolio summary bar -->
 <div class="portfolio-bar" id="portfolio-bar">
@@ -554,6 +629,51 @@ async function emergencyKillSwitch() {
       alert("Failed: " + d.msg);
     }
   } catch(e) { alert("Error: " + e); }
+}
+
+function toggleSettingsPanel() {
+  const panel = document.getElementById('settings-panel');
+  if (panel.style.display === 'none' || !panel.style.display) {
+    panel.style.display = 'block';
+    loadWebSettings();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+async function loadWebSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const d = await res.json();
+    if (d.RISK_PER_TRADE) document.getElementById('cfg-risk').value = d.RISK_PER_TRADE;
+    if (d.LEVERAGE) document.getElementById('cfg-leverage').value = d.LEVERAGE;
+    if (d.MAX_HOLD_HOURS) document.getElementById('cfg-hold').value = d.MAX_HOLD_HOURS;
+    if (d.MAX_OPEN_POSITIONS) document.getElementById('cfg-positions').value = d.MAX_OPEN_POSITIONS;
+  } catch(e) {}
+}
+
+async function saveWebSettings() {
+  const data = {
+    RISK_PER_TRADE: document.getElementById('cfg-risk').value,
+    LEVERAGE: document.getElementById('cfg-leverage').value,
+    MAX_HOLD_HOURS: document.getElementById('cfg-hold').value,
+    MAX_OPEN_POSITIONS: document.getElementById('cfg-positions').value,
+  };
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const d = await res.json();
+    if (d.ok) {
+      alert("✅ Live Settings Saved and Applied Successfully!");
+      toggleSettingsPanel();
+      refreshAll();
+    } else {
+      alert("❌ Failed to save settings: " + d.msg);
+    }
+  } catch(e) { alert("Error saving settings: " + e); }
 }
 
 async function refreshAll() {
