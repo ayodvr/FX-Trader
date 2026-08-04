@@ -9,7 +9,11 @@ from dataclasses import dataclass, field
 
 # Load .env file if present (python-dotenv); no-op if the file doesn't exist
 try:
+    from pathlib import Path
     from dotenv import load_dotenv
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        load_dotenv(dotenv_path=env_file)
     load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed — fall back to shell env vars
