@@ -119,9 +119,24 @@ class QuantScannerBot:
             age_hours = (now - entry_time).total_seconds() / 3600.0
             
             if age_hours >= self.max_hold_hours:
+                # Fetch last price to compute PnL on timeout
+                pnl = 0.0
+                try:
+                    df = self.exchange.get_klines(symbol, "15", limit=5)
+                    if df is not None and len(df) > 0:
+                        last_p = df.iloc[-1]["close"]
+                        entry_p = trade["entry_price"]
+                        qty = trade["qty"]
+                        factor = 1.0 if trade["side"] == "Buy" else -1.0
+                        pnl = (last_p - entry_p) * qty * factor
+                        self.paper_balance += pnl
+                except Exception:
+                    pass
+
+                pnl_str = f" | PnL: ${pnl:,.2f}" if pnl != 0.0 else ""
                 msg = (
                     f"⏰ [SCANNER TIMEOUT] Closing stagnant trade {symbol} "
-                    f"after {age_hours:.1f}h (Limit: {self.max_hold_hours}h)"
+                    f"after {age_hours:.1f}h (Limit: {self.max_hold_hours}h){pnl_str}"
                 )
                 self.logger.info(msg)
                 self.alerter.send(msg)
@@ -232,19 +247,76 @@ class QuantScannerBot:
                         "tp1_hit": False,
                     }
 
-                # --- Handle Exit Signal ---
-                elif curr_pos_dir != 0 and out.signal == Signal.FLAT:
+                # --- Check TP1 / TP2 / SL Exits on Active Trades ---
+                elif curr_pos_dir != 0:
                     trade = self.active_scanner_trades.get(symbol)
-                    msg = f"🏁 [QUANT SIGNAL EXIT] Closing {symbol} @ ~${last_price:,.4f}"
-                    self.logger.info(msg)
-                    self.alerter.send(msg)
+                    if trade:
+                        entry_p = trade["entry_price"]
+                        qty     = trade["qty"]
+                        side    = trade["side"]
+                        stop_p  = trade["stop_price"]
+                        tp1_p   = trade["tp1"]
+                        tp2_p   = trade["tp2"]
+                        tp1_hit = trade.get("tp1_hit", False)
 
-                    if not CONFIG.dry_run and trade:
-                        close_side = "Sell" if trade["side"] == "Buy" else "Buy"
-                        self.exchange.place_market_order(symbol, close_side, trade["qty"], reduce_only=True)
+                        # Determine PnL factor
+                        factor = 1.0 if side == "Buy" else -1.0
+                        
+                        # Stop-Loss Check
+                        sl_hit = (last_price <= stop_p) if side == "Buy" else (last_price >= stop_p)
+                        if sl_hit:
+                            pnl = (last_price - entry_p) * qty * factor
+                            self.paper_balance += pnl
+                            msg = f"🛑 [QUANT STOP-LOSS] {symbol} hit SL @ ${last_price:,.4f} | PnL: ${pnl:,.2f}"
+                            self.logger.info(msg)
+                            self.alerter.send(msg)
+                            if not CONFIG.dry_run:
+                                close_side = "Sell" if side == "Buy" else "Buy"
+                                self.exchange.place_market_order(symbol, close_side, qty, reduce_only=True)
+                            del self.active_scanner_trades[symbol]
+                            continue
 
-                    if symbol in self.active_scanner_trades:
-                        del self.active_scanner_trades[symbol]
+                        # TP1 Check (50% scale-out & move SL to breakeven)
+                        tp1_reached = (last_price >= tp1_p) if side == "Buy" else (last_price <= tp1_p)
+                        if tp1_reached and not tp1_hit:
+                            trade["tp1_hit"] = True
+                            trade["stop_price"] = entry_p  # Move SL to Breakeven
+                            half_qty = qty * 0.5
+                            pnl = (tp1_p - entry_p) * half_qty * factor
+                            self.paper_balance += pnl
+                            msg = f"🎯 [QUANT TP1 HIT] {symbol} hit TP1 @ ${last_price:,.4f} | Locked PnL: +${pnl:,.2f} | SL moved to Breakeven (${entry_p:,.4f})"
+                            self.logger.info(msg)
+                            self.alerter.send(msg)
+
+                        # TP2 Check (100% exit runner)
+                        tp2_reached = (last_price >= tp2_p) if side == "Buy" else (last_price <= tp2_p)
+                        if tp2_reached:
+                            rem_qty = qty * 0.5 if tp1_hit else qty
+                            pnl = (tp2_p - entry_p) * rem_qty * factor
+                            self.paper_balance += pnl
+                            msg = f"🚀 [QUANT TP2 HIT] {symbol} hit TP2 Runner @ ${last_price:,.4f} | Runner PnL: +${pnl:,.2f}"
+                            self.logger.info(msg)
+                            self.alerter.send(msg)
+                            if not CONFIG.dry_run:
+                                close_side = "Sell" if side == "Buy" else "Buy"
+                                self.exchange.place_market_order(symbol, close_side, rem_qty, reduce_only=True)
+                            del self.active_scanner_trades[symbol]
+                            continue
+
+                        # Signal Flat Exit
+                        if out.signal == Signal.FLAT:
+                            rem_qty = qty * 0.5 if tp1_hit else qty
+                            pnl = (last_price - entry_p) * rem_qty * factor
+                            self.paper_balance += pnl
+                            msg = f"🏁 [QUANT SIGNAL EXIT] Closing {symbol} @ ~${last_price:,.4f} | PnL: ${pnl:,.2f}"
+                            self.logger.info(msg)
+                            self.alerter.send(msg)
+
+                            if not CONFIG.dry_run:
+                                close_side = "Sell" if side == "Buy" else "Buy"
+                                self.exchange.place_market_order(symbol, close_side, rem_qty, reduce_only=True)
+
+                            del self.active_scanner_trades[symbol]
 
             except Exception as e:
                 self.logger.warning("Error scanning symbol %s: %s", symbol, e)
