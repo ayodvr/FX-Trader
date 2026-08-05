@@ -194,13 +194,22 @@ class QuantScannerBot:
                         self.logger.info("[%s] Trade sizing rejected: %s", symbol, sizing.reason)
                         continue
 
+                    def fmt_price(val: float | None) -> str:
+                        if val is None:
+                            return "—"
+                        if val < 0.01:
+                            return f"${val:.6f}"
+                        if val < 1.0:
+                            return f"${val:.4f}"
+                        return f"${val:,.2f}"
+
                     side = "Buy" if out.signal == Signal.LONG else "Sell"
                     msg = (
                         f"🏛️ [QUANT SIGNAL ENTRY] {symbol} ({side}) 10X\n"
-                        f"✦ Price: ${last_price:,.4f}\n"
-                        f"✦ Stop-Loss: ${out.stop_price:,.4f}\n"
-                        f"✦ TP1 (1.5R): ${out.tp1_price:,.4f} (Auto-Breakeven)\n"
-                        f"✦ TP2 (3.0R): ${out.tp2_price:,.4f}\n"
+                        f"✦ Price: {fmt_price(last_price)}\n"
+                        f"✦ Stop-Loss: {fmt_price(out.stop_price)}\n"
+                        f"✦ TP1 (1.5R): {fmt_price(out.tp1_price)} (Auto-Breakeven)\n"
+                        f"✦ TP2 (3.0R): {fmt_price(out.tp2_price)}\n"
                         f"✦ Smart Money RVOL: {out.rvol:.2f}x | BTC Regime: {out.btc_regime}"
                     )
                     self.logger.info(msg)
