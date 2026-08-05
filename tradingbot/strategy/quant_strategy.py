@@ -145,12 +145,16 @@ def generate_quant_signal(
         #  - RSI in momentum expansion range (40 - 72)
         #  - Relative Volume (RVOL) >= required_rvol (smart money activity)
         #  - BTC regime not bearish (btc_regime >= 0)
+        # Minimum ATR risk distance threshold (0.7% of price) to filter out paper-thin micro-range noise
+        sufficient_volatility = (atr * 1.5) >= (close * 0.007)
+
         long_confluence = (
             crossed_up and
             close > trend and
             (40.0 <= rsi <= 72.0) and
             rvol >= required_rvol and
-            btc_regime >= 0
+            btc_regime >= 0 and
+            sufficient_volatility
         )
 
         # SHORT Confluence Requirements:
@@ -165,7 +169,8 @@ def generate_quant_signal(
             (28.0 <= rsi <= 60.0) and
             rvol >= required_rvol and
             not cfg.long_only and
-            btc_regime <= 0
+            btc_regime <= 0 and
+            sufficient_volatility
         )
 
         if long_confluence:
