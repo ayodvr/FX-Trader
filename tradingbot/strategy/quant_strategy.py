@@ -130,12 +130,9 @@ def generate_quant_signal(
     crossed_up   = prev["fast_ema"] <= prev["slow_ema"] and fast > slow
     crossed_down = prev["fast_ema"] >= prev["slow_ema"] and fast < slow
 
-    min_rvol = float(getattr(cfg, "min_volume_spike", 1.25))
-    if min_rvol < 1.1:
-        min_rvol = 1.25
-
-    # In a neutral BTC regime (btc_regime == 0), require higher volume spike (>= 1.4x)
-    required_rvol = min_rvol if btc_regime != 0 else max(min_rvol, 1.4)
+    min_rvol = float(getattr(cfg, "min_volume_spike", 1.0))
+    # In a neutral BTC regime (btc_regime == 0), require moderate volume spike (>= 1.15x)
+    required_rvol = min_rvol if btc_regime != 0 else max(min_rvol, 1.15)
 
     # ── Flat: Look for 3-Point Confluence Entry ────────────────────────────────
     if current_position == 0:
@@ -143,18 +140,14 @@ def generate_quant_signal(
         #  - Fast > Slow EMA crossover
         #  - Price above Trend EMA (50)
         #  - RSI in momentum expansion range (40 - 72)
-        #  - Relative Volume (RVOL) >= required_rvol (smart money activity)
+        #  - Relative Volume (RVOL) >= required_rvol
         #  - BTC regime not bearish (btc_regime >= 0)
-        # Minimum ATR risk distance threshold (0.7% of price) to filter out paper-thin micro-range noise
-        sufficient_volatility = (atr * 1.5) >= (close * 0.007)
-
         long_confluence = (
             crossed_up and
             close > trend and
             (40.0 <= rsi <= 72.0) and
             rvol >= required_rvol and
-            btc_regime >= 0 and
-            sufficient_volatility
+            btc_regime >= 0
         )
 
         # SHORT Confluence Requirements:
@@ -169,8 +162,7 @@ def generate_quant_signal(
             (28.0 <= rsi <= 60.0) and
             rvol >= required_rvol and
             not cfg.long_only and
-            btc_regime <= 0 and
-            sufficient_volatility
+            btc_regime <= 0
         )
 
         if long_confluence:
