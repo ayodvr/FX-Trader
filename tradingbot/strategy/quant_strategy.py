@@ -130,9 +130,11 @@ def generate_quant_signal(
     crossed_up   = prev["fast_ema"] <= prev["slow_ema"] and fast > slow
     crossed_down = prev["fast_ema"] >= prev["slow_ema"] and fast < slow
 
-    min_rvol = float(getattr(cfg, "min_volume_spike", 1.0))
-    # In a neutral BTC regime (btc_regime == 0), require moderate volume spike (>= 1.15x)
-    required_rvol = min_rvol if btc_regime != 0 else max(min_rvol, 1.15)
+    min_rvol = float(getattr(cfg, "min_volume_spike", 1.5))
+    # In a neutral BTC regime (btc_regime == 0) we are trading against the broader
+    # trend, so require a stronger volume spike to confirm conviction.
+    # In a directional regime (+1/-1), the configured min_rvol applies directly.
+    required_rvol = max(min_rvol, 1.15) if btc_regime == 0 else min_rvol
 
     # ── Flat: Look for 3-Point Confluence Entry ────────────────────────────────
     if current_position == 0:

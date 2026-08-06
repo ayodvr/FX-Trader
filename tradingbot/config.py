@@ -37,7 +37,9 @@ class StrategyConfig:
     atr_stop_mult: float = float(os.getenv("ATR_STOP_MULT", "2.0"))      # stop-loss = entry -/+ ATR * mult
     atr_trail_mult: float = float(os.getenv("ATR_TRAIL_MULT", "3.0"))    # trailing stop distance
     min_adx: float = float(os.getenv("MIN_ADX", "10.0"))                 # filter choppy markets
-    min_volume_spike: float = float(os.getenv("MIN_VOLUME_SPIKE", "1.0"))# 1.0 = off / disabled
+    # 1.5 = require 50% above-average volume — real smart-money spike filter.
+    # Set to 1.0 to disable (not recommended for live trading).
+    min_volume_spike: float = float(os.getenv("MIN_VOLUME_SPIKE", "1.5"))
     long_only: bool = os.getenv("LONG_ONLY", "false").lower() == "true"   # allow both Long and Short trades
 
 
@@ -47,7 +49,8 @@ class RiskConfig:
     max_position_pct: float = float(os.getenv("MAX_POSITION_PCT", "0.25"))       # never put more than 25% of equity in one position (notional)
     max_daily_loss_pct: float = float(os.getenv("MAX_DAILY_LOSS", "0.03"))       # kill switch: stop trading for the day after -3%
     max_open_positions: int = int(os.getenv("MAX_OPEN_POSITIONS", "1"))          # this bot trades one symbol/position at a time
-    leverage: int = int(os.getenv("LEVERAGE", "5"))                              # default 5X leverage for altcoin futures
+    leverage: int = int(os.getenv("LEVERAGE", "5"))                              # 5X — safe default for live altcoin futures
+    min_stop_pct: float = float(os.getenv("MIN_STOP_PCT", "0.003"))              # reject trades where stop < 0.3% from entry (too tight at leverage)
 
 
 @dataclass
@@ -58,11 +61,20 @@ class AlertConfig:
 
 
 @dataclass
+class ScannerConfig:
+    """Settings specific to the Quant Scanner daemon."""
+    top_symbols_count: int = int(os.getenv("TOP_SYMBOLS_COUNT", "30"))     # number of top-volume symbols to scan
+    max_hold_hours: float = float(os.getenv("MAX_HOLD_HOURS", "3.0"))      # stagnant-trade auto-exit after this many hours
+    max_active_trades: int = int(os.getenv("MAX_ACTIVE_TRADES", "2"))      # cap simultaneous open positions (reduced from 3 for live safety)
+
+
+@dataclass
 class BotConfig:
     exchange: ExchangeConfig = field(default_factory=ExchangeConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     alerts: AlertConfig = field(default_factory=AlertConfig)
+    scanner: ScannerConfig = field(default_factory=ScannerConfig)
     poll_interval_sec: int = 30     # check every 30 seconds for closed 15m candles
     dry_run: bool = os.getenv("DRY_RUN", "true").lower() == "true"  # paper-trade mode, no real orders
 

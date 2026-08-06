@@ -64,6 +64,16 @@ class RiskManager:
         if stop_distance <= 0:
             return SizingResult(False, reason="Invalid stop distance")
 
+        # Reject stops that are too tight relative to entry price.
+        # Sub-0.3% stops at leverage get blown through by normal crypto noise.
+        min_stop_pct = getattr(self.cfg, "min_stop_pct", 0.003)
+        stop_pct = stop_distance / entry_price if entry_price > 0 else 0.0
+        if stop_pct < min_stop_pct:
+            return SizingResult(
+                False,
+                reason=f"Stop distance {stop_pct*100:.3f}% < minimum {min_stop_pct*100:.3f}% — too tight for leverage"
+            )
+
         dollar_risk = equity * self.cfg.account_risk_per_trade
         qty = dollar_risk / stop_distance
 
