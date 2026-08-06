@@ -4,6 +4,7 @@ Cybrox Quant Terminal Dashboard Server — Autonomous Top-30 Scanner UI.
 Run with:
     python dashboard.py
 """
+import hmac
 import json
 import logging
 import os
@@ -34,9 +35,15 @@ app = Flask(__name__)
 
 
 def check_auth(username, password):
-    expected_user = os.getenv("DASHBOARD_USERNAME", "dinosaur")
-    expected_pass = os.getenv("DASHBOARD_PASSWORD", "dinosaur123")
-    return username == expected_user and password == expected_pass
+    # Defaults match .env.example -- keep them in sync so an unconfigured
+    # deployment behaves the way the docs say it does.
+    expected_user = os.getenv("DASHBOARD_USERNAME", "admin")
+    expected_pass = os.getenv("DASHBOARD_PASSWORD", "admin123")
+    # Constant-time compare to avoid leaking credential length/content via timing.
+    return (
+        hmac.compare_digest(username, expected_user)
+        and hmac.compare_digest(password, expected_pass)
+    )
 
 
 def authenticate():

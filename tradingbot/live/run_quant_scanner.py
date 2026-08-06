@@ -255,9 +255,13 @@ class QuantScannerBot:
 
         if not CONFIG.dry_run:
             close_side = "Sell" if trade["side"] == "Buy" else "Buy"
+            # If TP1 already scaled out 50% on the exchange, only the remaining
+            # half is still open — closing the original full qty would send a
+            # reduce-only order larger than the actual position.
+            remaining_qty = trade["qty"] * 0.5 if trade.get("tp1_hit", False) else trade["qty"]
             try:
                 self._cancel_exchange_stop(symbol)
-                self.exchange.place_market_order(symbol, close_side, trade["qty"], reduce_only=True)
+                self.exchange.place_market_order(symbol, close_side, remaining_qty, reduce_only=True)
             except Exception as e:
                 self.logger.error("Failed to close position for %s: %s", symbol, e)
 
@@ -442,10 +446,17 @@ class QuantScannerBot:
                             self.logger.info(msg)
                             self.alerter.send(msg)
 
-                            # Move exchange stop to breakeven
+                            # Actually scale out 50% on the exchange, then move the
+                            # remaining stop to breakeven for the reduced size.
                             if not CONFIG.dry_run:
+                                close_side = "Sell" if side == "Buy" else "Buy"
                                 self._cancel_exchange_stop(symbol)
-                                self._place_exchange_stop(symbol, "Sell" if side == "Buy" else "Buy", half_qty, entry_p)
+                                try:
+                                    self.exchange.place_market_order(symbol, close_side, half_qty, reduce_only=True)
+                                except Exception as e:
+                                    self.logger.error("[%s] Failed to execute TP1 scale-out order: %s", symbol, e)
+                                    self.alerter.send(f"🚨 [{symbol}] CRITICAL: TP1 scale-out order failed ({e}) — position may be oversized")
+                                self._place_exchange_stop(symbol, close_side, half_qty, entry_p)
 
                     # ── TP2 check (100% exit runner) ─────────────────────────
                     if tp2_p is not None:

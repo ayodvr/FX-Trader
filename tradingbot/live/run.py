@@ -256,9 +256,19 @@ class LiveBot:
             if not CONFIG.dry_run:
                 self.exchange.place_market_order(symbol, side, sizing.qty)
                 stop_side = "Sell" if side == "Buy" else "Buy"
-                resp = self.exchange.place_stop_order(symbol, stop_side, sizing.qty, out.stop_price)
-                self.stop_order_id = resp.get("result", {}).get("orderId") if resp else None
-                
+                try:
+                    resp = self.exchange.place_stop_order(symbol, stop_side, sizing.qty, out.stop_price)
+                    self.stop_order_id = resp.get("result", {}).get("orderId") if resp else None
+                except Exception as e:
+                    # Position is open with no protective stop -- fail safe by
+                    # closing it immediately rather than riding unprotected.
+                    self.logger.error("[%s] Failed to place protective stop after entry -- "
+                                       "emergency closing position: %s", symbol, e)
+                    self.alerter.send(f"🚨 [{symbol}] CRITICAL: stop-loss placement failed after entry "
+                                       f"({e}) -- emergency closing position")
+                    self.exchange.close_all_positions(symbol)
+                    return
+
                 # Place 50% Scale-Out Limit Order
                 scale_qty = round(sizing.qty * 0.5, 6)
                 tp_price = getattr(sizing, 'take_profit_price', 0)

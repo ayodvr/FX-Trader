@@ -26,6 +26,7 @@ class QuantOutput:
     stop_price: float | None = None        # initial stop-loss price
     tp1_price: float | None = None         # 1.5R target (scale out 50%, move SL to breakeven)
     tp2_price: float | None = None         # 3.0R target (runner exit)
+    trail_price: float | None = None       # current ATR trailing-stop level while in position
     fast_ema: float = 0.0
     slow_ema: float = 0.0
     trend_ema: float = 0.0
@@ -200,13 +201,13 @@ def generate_quant_signal(
         trail = max(current_trail or new_trail, new_trail)
         if crossed_down or close <= trail:
             return QuantOutput(Signal.FLAT, fast_ema=fast, slow_ema=slow, atr=atr, btc_regime=btc_regime)
-        return QuantOutput(Signal.HOLD, tp1_price=trail, fast_ema=fast, slow_ema=slow, atr=atr, btc_regime=btc_regime)
+        return QuantOutput(Signal.HOLD, trail_price=trail, fast_ema=fast, slow_ema=slow, atr=atr, btc_regime=btc_regime)
 
     if current_position == -1:
         new_trail = close + atr * getattr(cfg, "atr_trail_mult", 2.5)
         trail = min(current_trail or new_trail, new_trail)
         if crossed_up or close >= trail:
             return QuantOutput(Signal.FLAT, fast_ema=fast, slow_ema=slow, atr=atr, btc_regime=btc_regime)
-        return QuantOutput(Signal.HOLD, tp1_price=trail, fast_ema=fast, slow_ema=slow, atr=atr, btc_regime=btc_regime)
+        return QuantOutput(Signal.HOLD, trail_price=trail, fast_ema=fast, slow_ema=slow, atr=atr, btc_regime=btc_regime)
 
     return QuantOutput(Signal.HOLD, fast_ema=fast, slow_ema=slow, atr=atr, btc_regime=btc_regime)
