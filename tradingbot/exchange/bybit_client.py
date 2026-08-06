@@ -82,6 +82,21 @@ class BybitExchange:
             logger.warning("Could not fetch open position from exchange (%s): %s", symbol, e)
             return None
 
+    def get_all_open_positions(self) -> list[dict]:
+        """Return every open position on the account, regardless of symbol.
+
+        Needed because the quant scanner can hold positions in any of its
+        top-N scanned symbols (not a fixed list) — per-symbol lookups can't
+        be used to enumerate what's actually open.
+        """
+        try:
+            resp = self.client.get_positions(category=self.cfg.category, settleCoin="USDT")
+            positions = resp.get("result", {}).get("list", [])
+            return [p for p in positions if float(p.get("size", 0)) > 0]
+        except Exception as e:
+            logger.warning("Could not fetch all open positions: %s", e)
+            return []
+
     def set_leverage(self, symbol: str, leverage: int):
         try:
             self.client.set_leverage(

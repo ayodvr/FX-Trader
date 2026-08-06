@@ -169,19 +169,18 @@ def api_scanner_tail_log():
 def api_positions():
     try:
         bybit = BybitExchange(CONFIG.exchange)
-        top_symbols = bybit.get_top_symbols(limit=10)
-        res = []
-        for sym in top_symbols:
-            pos = bybit.get_open_position(sym)
-            if pos and float(pos.get("size", 0)) > 0:
-                res.append({
-                    "symbol": sym,
-                    "side": pos.get("side", ""),
-                    "size": pos.get("size", "0"),
-                    "entry_price": pos.get("avgPrice", "0"),
-                    "mark_price": pos.get("markPrice", "0"),
-                    "unrealised_pnl": pos.get("unrealisedPnl", "0")
-                })
+        positions = bybit.get_all_open_positions()
+        res = [
+            {
+                "symbol": p.get("symbol", ""),
+                "side": p.get("side", ""),
+                "size": p.get("size", "0"),
+                "entry_price": p.get("avgPrice", "0"),
+                "mark_price": p.get("markPrice", "0"),
+                "unrealised_pnl": p.get("unrealisedPnl", "0"),
+            }
+            for p in positions
+        ]
         return jsonify({"ok": True, "positions": res})
     except Exception as e:
         return jsonify({"ok": True, "positions": []})
@@ -191,14 +190,16 @@ def api_positions():
 def api_kill_switch():
     try:
         bybit = BybitExchange(CONFIG.exchange)
-        symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "NEARUSDT", "AVAXUSDT"]
+        # Close whatever is actually open on the account -- the scanner can
+        # hold positions in any of its top-N scanned symbols, not a fixed list.
+        symbols = {p["symbol"] for p in bybit.get_all_open_positions()}
         for sym in symbols:
             try:
                 bybit.cancel_all_orders(sym)
                 bybit.close_all_positions(sym)
             except Exception:
                 pass
-        return jsonify({"ok": True, "msg": "Kill switch triggered"})
+        return jsonify({"ok": True, "msg": f"Kill switch triggered for {len(symbols)} symbol(s): {sorted(symbols)}"})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
