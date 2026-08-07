@@ -297,11 +297,9 @@ class LiveBot:
             self.alerter.send(msg)
 
             if not CONFIG.dry_run and qty > 0:
-                # Cancel any open stop order first to prevent a race with our market close
-                if self.stop_order_id:
-                    self.exchange.cancel_order(symbol, self.stop_order_id)
-                else:
-                    self.exchange.cancel_all_stops(symbol)  # belt-and-suspenders
+                # Cancel everything resting -- the stop AND the scale-out limit order
+                # placed at entry, which cancel_all_stops alone would leave orphaned.
+                self.exchange.cancel_all_orders(symbol)
                 self.exchange.place_market_order(symbol, side, qty, reduce_only=True)
 
             realized_pnl = (price - entry_price) * qty * current_position

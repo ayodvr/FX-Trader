@@ -87,9 +87,65 @@ def test_failsafe_path(exchange):
               else "FAIL: position is still open after fail-safe close!")
 
 
+def test_full_lifecycle(exchange):
+    """
+    Mirrors live/run.py's full entry -> scale-out limit -> trailing-stop-replace
+    -> exit sequence, without waiting for a real strategy signal.
+    """
+    print("=== TEST 3: full lifecycle (entry -> scale-out limit -> trail replace -> exit) ===")
+    try:
+        price = exchange.get_klines(SYMBOL, "15", limit=2).iloc[-1]["close"]
+        exchange.place_market_order(SYMBOL, "Buy", QTY)
+        time.sleep(2)
+        _print_position(exchange, "after entry")
+
+        stop_price = round(price * 0.99, 1)
+        stop_resp = exchange.place_stop_order(SYMBOL, "Sell", QTY, stop_price)
+        stop_id = stop_resp.get("result", {}).get("orderId") if stop_resp else None
+        print(f"PASS: initial stop placed, orderId={stop_id}" if stop_id else f"FAIL: initial stop: {stop_resp}")
+
+        tp_price = round(price * 1.02, 1)  # 2% above -- rests without filling immediately
+        scale_qty = round(QTY * 0.5, 6)
+        limit_resp = exchange.place_limit_order(SYMBOL, "Sell", scale_qty, tp_price, reduce_only=True)
+        limit_id = limit_resp.get("result", {}).get("orderId") if limit_resp else None
+        print(f"PASS: scale-out limit order placed, orderId={limit_id}" if limit_id
+              else f"FAIL: scale-out limit order: {limit_resp}")
+
+        # Trailing-stop replace: cancel the old stop, place a new one closer to price --
+        # same cancel-then-place cycle live/run.py runs each time the trail ratchets.
+        if stop_id:
+            exchange.cancel_order(SYMBOL, stop_id)
+        new_stop_price = round(price * 0.995, 1)
+        new_stop_resp = exchange.place_stop_order(SYMBOL, "Sell", QTY, new_stop_price)
+        new_stop_id = new_stop_resp.get("result", {}).get("orderId") if new_stop_resp else None
+        print(f"PASS: trail-replace stop placed, orderId={new_stop_id}" if new_stop_id
+              else f"FAIL: trail-replace stop: {new_stop_resp}")
+
+        open_orders = exchange.get_all_open_orders(SYMBOL)
+        print(f"Open orders before exit: {len(open_orders)} (expect 2 -- the replaced stop + the scale-out limit)")
+
+        # Exit sequence, matching the fixed live/run.py: cancel everything resting
+        # (stop AND scale-out limit) before the market close, so nothing is orphaned.
+        exchange.cancel_all_orders(SYMBOL)
+        exchange.place_market_order(SYMBOL, "Sell", QTY, reduce_only=True)
+        time.sleep(2)
+    finally:
+        exchange.cancel_all_orders(SYMBOL)
+        exchange.close_all_positions(SYMBOL)
+        time.sleep(2)
+        pos = _print_position(exchange, "after exit")
+        remaining = exchange.get_all_open_orders(SYMBOL)
+        print(f"Open orders after exit: {len(remaining)} (expect 0)")
+        if pos is None and len(remaining) == 0:
+            print("PASS: flat with no orphaned orders after full lifecycle")
+        else:
+            print("FAIL: leftover position or orphaned order(s) after exit!")
+
+
 if __name__ == "__main__":
     _assert_safe()
     exchange = BybitExchange(CONFIG.exchange)
     test_happy_path(exchange)
     test_failsafe_path(exchange)
+    test_full_lifecycle(exchange)
     print("Done. Review PASS/FAIL lines above.")

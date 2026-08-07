@@ -156,6 +156,17 @@ class BybitExchange:
         )
         return resp
 
+    def get_all_open_orders(self, symbol: str) -> list[dict]:
+        """Return every open order for a symbol -- regular (limit/market) and conditional/stop."""
+        orders = []
+        try:
+            resp = self.client.get_open_orders(category=self.cfg.category, symbol=symbol)
+            orders.extend(resp.get("result", {}).get("list", []))
+        except Exception as e:
+            logger.warning("get_all_open_orders failed: %s", e)
+        orders.extend(self.get_open_stop_orders(symbol))
+        return orders
+
     def get_open_stop_orders(self, symbol: str) -> list[dict]:
         """Return all open conditional/stop orders for a symbol."""
         try:
