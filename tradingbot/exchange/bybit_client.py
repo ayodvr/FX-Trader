@@ -157,15 +157,22 @@ class BybitExchange:
         return resp
 
     def get_all_open_orders(self, symbol: str) -> list[dict]:
-        """Return every open order for a symbol -- regular (limit/market) and conditional/stop."""
-        orders = []
+        """Return every open order for a symbol -- regular (limit/market) and conditional/stop.
+
+        Deduped by orderId: the unfiltered query already includes stop orders for
+        the linear category on Bybit, so combining it with the StopOrder-filtered
+        query would otherwise double-count them.
+        """
+        orders = {}
         try:
             resp = self.client.get_open_orders(category=self.cfg.category, symbol=symbol)
-            orders.extend(resp.get("result", {}).get("list", []))
+            for o in resp.get("result", {}).get("list", []):
+                orders[o.get("orderId")] = o
         except Exception as e:
             logger.warning("get_all_open_orders failed: %s", e)
-        orders.extend(self.get_open_stop_orders(symbol))
-        return orders
+        for o in self.get_open_stop_orders(symbol):
+            orders[o.get("orderId")] = o
+        return list(orders.values())
 
     def get_open_stop_orders(self, symbol: str) -> list[dict]:
         """Return all open conditional/stop orders for a symbol."""
