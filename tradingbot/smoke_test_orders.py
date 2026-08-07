@@ -117,7 +117,10 @@ def test_full_lifecycle(exchange):
         # Trailing-stop replace: cancel the old stop, place a new one closer to price --
         # same cancel-then-place cycle live/run.py runs each time the trail ratchets.
         if stop_id:
-            exchange.cancel_order(SYMBOL, stop_id)
+            cancelled = exchange.cancel_order(SYMBOL, stop_id)
+            print(f"PASS: old stop cancelled ({stop_id})" if cancelled
+                  else f"FAIL: old stop cancel returned False ({stop_id})")
+            time.sleep(1)  # let the cancellation propagate before re-querying
         new_stop_price = round(price * 0.995, 1)
         new_stop_resp = exchange.place_stop_order(SYMBOL, "Sell", QTY, new_stop_price)
         new_stop_id = new_stop_resp.get("result", {}).get("orderId") if new_stop_resp else None
@@ -126,6 +129,11 @@ def test_full_lifecycle(exchange):
 
         open_orders = exchange.get_all_open_orders(SYMBOL)
         print(f"Open orders before exit: {len(open_orders)} (expect 2 -- the replaced stop + the scale-out limit)")
+        for o in open_orders:
+            print(f"  - orderId={o.get('orderId')} type={o.get('orderType')} "
+                  f"triggerPrice={o.get('triggerPrice')} price={o.get('price')}")
+        if stop_id in [o.get("orderId") for o in open_orders]:
+            print(f"FAIL: old stop {stop_id} is still open -- cancel did not actually remove it")
 
         # Exit sequence, matching the fixed live/run.py: cancel everything resting
         # (stop AND scale-out limit) before the market close, so nothing is orphaned.
