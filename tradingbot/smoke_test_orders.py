@@ -17,7 +17,10 @@ from config import CONFIG
 from exchange.bybit_client import BybitExchange
 
 SYMBOL = "BTCUSDT"
-QTY = 0.001  # minimal BTCUSDT perp size -- adjust if the exchange rejects it as below minimum
+# 0.002 so that Test 3's 50% scale-out (0.001) still clears Bybit's minimum
+# contract size for BTCUSDT -- confirmed via Tests 1/2 that 0.001 itself is
+# the minimum, so half of that would be rejected.
+QTY = 0.002
 
 
 def _assert_safe():

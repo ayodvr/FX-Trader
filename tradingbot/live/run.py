@@ -269,11 +269,19 @@ class LiveBot:
                     self.exchange.close_all_positions(symbol)
                     return
 
-                # Place 50% Scale-Out Limit Order
+                # Place 50% Scale-Out Limit Order -- best-effort. The protective stop
+                # above already succeeded, so a failure here shouldn't abort the cycle
+                # or skip setting trail_price/state below.
                 scale_qty = round(sizing.qty * 0.5, 6)
                 tp_price = getattr(sizing, 'take_profit_price', 0)
                 if scale_qty > 0 and tp_price > 0:
-                    self.exchange.place_limit_order(symbol, stop_side, scale_qty, tp_price, reduce_only=True)
+                    try:
+                        self.exchange.place_limit_order(symbol, stop_side, scale_qty, tp_price, reduce_only=True)
+                    except Exception as e:
+                        self.logger.error("[%s] Failed to place scale-out limit order (position "
+                                           "remains open and stop-protected): %s", symbol, e)
+                        self.alerter.send(f"⚠️ [{symbol}] Scale-out order failed ({e}) -- "
+                                           f"position still open and protected by stop-loss")
 
             self.trail_price = out.stop_price
             _write_state(symbol, {"symbol": symbol, "position": 1 if side == "Buy" else -1,
