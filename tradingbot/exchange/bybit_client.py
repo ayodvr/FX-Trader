@@ -137,7 +137,13 @@ class BybitExchange:
         return resp
 
     def place_stop_order(self, symbol: str, side: str, qty: float, trigger_price: float) -> dict:
-        """Conditional market order that triggers at trigger_price, closing the position."""
+        """Conditional market order that triggers at trigger_price, closing the position.
+
+        This is always a protective stop, so the trigger direction is fixed by which
+        side is closing: a Sell closes a long and sits below price (fires on a
+        Falling move); a Buy closes a short and sits above price (fires on a Rising
+        move). Bybit's triggerDirection: 1 = Rising, 2 = Falling.
+        """
         resp = self.client.place_order(
             category=self.cfg.category,
             symbol=symbol,
@@ -146,7 +152,7 @@ class BybitExchange:
             qty=str(qty),
             triggerPrice=str(round(trigger_price, 2)),
             reduceOnly=True,
-            triggerDirection=1 if side == "Sell" else 2,
+            triggerDirection=2 if side == "Sell" else 1,
         )
         return resp
 
