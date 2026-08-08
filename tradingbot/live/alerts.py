@@ -111,10 +111,16 @@ class Alerter:
 
         url = f"https://api.telegram.org/bot{self.cfg.telegram_bot_token}/sendMessage"
         try:
-            requests.post(
+            resp = requests.post(
                 url,
                 json={"chat_id": self.cfg.telegram_chat_id, "text": message},
                 timeout=(5, 15),
             )
+            # requests only raises on network-level failures -- Telegram rejecting
+            # the message (bot blocked, chat gone, bad chat_id) comes back as a
+            # normal response with an error status, which would otherwise be
+            # silently swallowed with no trace anywhere.
+            if not resp.ok:
+                logger.warning("Telegram rejected alert (status=%d): %s", resp.status_code, resp.text)
         except requests.RequestException as e:
             logger.warning("Failed to send Telegram alert: %s", e)
