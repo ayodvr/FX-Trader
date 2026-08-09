@@ -42,7 +42,22 @@ def run_breakout_backtest(
     max_concurrent: int = 3,
     risk_cfg=None,
     quiet: bool = False,
+    entry_mode: str = "taker",
+    maker_fee: float = 0.0002,
+    maker_offset_pct: float = 0.0,
+    maker_timeout_bars: int = 3,
 ):
+    """
+    entry_mode:
+      "taker" -- market entry on the signal bar's close, paying fee + slippage.
+      "maker" -- rest a post-only limit at close*(1 -/+ maker_offset_pct) and fill
+                 only if a later bar within maker_timeout_bars actually trades
+                 through it. Cheaper per fill, but a breakout that never looks
+                 back is simply missed -- which is the cost this mode exists to
+                 measure, since those runaway moves are where the profit is.
+    Exits stay taker in both modes: a trailing stop is a stop-market order and
+    cannot be posted passively.
+    """
     risk = RiskManager(risk_cfg if risk_cfg is not None else CONFIG.risk)
 
     def _log(m):
@@ -78,8 +93,10 @@ def run_breakout_backtest(
     hours, minutes = timeline.hour.to_numpy(), timeline.minute.to_numpy()
     equity = starting_equity
     open_trades: dict[str, dict] = {}
+    pending: dict[str, dict] = {}     # resting post-only entries, maker mode only
     trades: list[dict] = []
     curve = np.empty(len(timeline), dtype=float)
+    missed_fills = 0
 
     _log(f"Simulating {len(timeline):,} bars across {len(ind)} symbols "
          f"(channel {cfg.channel}, exit {cfg.atr_exit_mult} ATR, max {max_concurrent} concurrent)...")
@@ -163,6 +180,18 @@ def run_breakout_backtest(
                 continue
 
             is_long = out.signal == Signal.LONG
+
+            if entry_mode == "maker":
+                # Post-only: a buy must rest at or below market, a sell at or
+                # above it, otherwise the exchange rejects it for crossing.
+                limit = (close * (1 - maker_offset_pct) if is_long
+                         else close * (1 + maker_offset_pct))
+                pending[sym] = {
+                    "is_long": is_long, "limit": limit, "qty": sizing.qty,
+                    "stop_price": out.stop_price, "expires": i + maker_timeout_bars,
+                }
+                continue
+
             fill = close * (1 + slippage_pct) if is_long else close * (1 - slippage_pct)
             fee = sizing.qty * fill * fee_rate
             equity -= fee
@@ -179,7 +208,73 @@ def run_breakout_backtest(
                 "pnl": None, "fee": fee, "duration_h": None, "r_multiple": None,
             })
 
+        # ── Resting post-only entries: fill, expire, or keep waiting ─────────
+        for sym in list(pending):
+            po = pending[sym]
+            a = arr[sym]
+            if not a["valid"][i]:
+                continue
+            if sym in open_trades:
+                del pending[sym]
+                continue
+
+            # Filled only if this bar actually traded through the resting price.
+            hit = (a["low"][i] <= po["limit"]) if po["is_long"] else (a["high"][i] >= po["limit"])
+            if hit:
+                fill = po["limit"]          # maker: no slippage, we set the price
+                fee = po["qty"] * fill * maker_fee
+                equity -= fee
+                is_long = po["is_long"]
+                trades.append({
+                    "time": ts, "symbol": sym, "side": "Buy" if is_long else "Sell",
+                    "action": "ENTER", "reason": "maker", "price": fill,
+                    "qty": po["qty"], "pnl": None, "fee": fee,
+                    "duration_h": None, "r_multiple": None,
+                })
+                del pending[sym]
+
+                # The bar that filled us kept trading after the fill. If it also
+                # reached the stop, we were stopped inside that same bar -- not
+                # granted a free look at the next one. Without this the deeper
+                # the resting offset, the more the model quietly filled on
+                # down-moves and then ignored the rest of the move.
+                same_bar_stop = ((a["low"][i] <= po["stop_price"]) if is_long
+                                 else (a["high"][i] >= po["stop_price"]))
+                if same_bar_stop:
+                    px = po["stop_price"]
+                    exit_fill = px * (1 - slippage_pct) if is_long else px * (1 + slippage_pct)
+                    factor = 1.0 if is_long else -1.0
+                    pnl = (exit_fill - fill) * po["qty"] * factor
+                    exit_fee = po["qty"] * exit_fill * fee_rate
+                    equity += pnl - exit_fee
+                    risk.record_realized_pnl(pnl - exit_fee, equity, now=ts)
+                    rpu = abs(fill - po["stop_price"])
+                    trades.append({
+                        "time": ts, "symbol": sym, "side": "Buy" if is_long else "Sell",
+                        "action": "EXIT", "reason": "STOP", "price": exit_fill,
+                        "qty": po["qty"], "pnl": pnl - exit_fee, "fee": exit_fee,
+                        "duration_h": 0.0,
+                        "r_multiple": ((exit_fill - fill) * factor) / rpu if rpu > 0 else 0.0,
+                    })
+                    continue
+
+                open_trades[sym] = {
+                    "side": "Buy" if is_long else "Sell",
+                    "entry_price": fill, "entry_time": ts, "qty": po["qty"],
+                    "stop_price": po["stop_price"], "trail": None,
+                    "extreme": a["high"][i] if is_long else a["low"][i],
+                    "risk_per_unit": abs(fill - po["stop_price"]),
+                }
+            elif i >= po["expires"]:
+                missed_fills += 1
+                del pending[sym]
+
         curve[i] = equity
+
+    if missed_fills and not quiet:
+        filled = len([t for t in trades if t["action"] == "ENTER"])
+        _log(f"  maker entries: {filled} filled, {missed_fills} missed "
+             f"({missed_fills / (filled + missed_fills) * 100:.1f}% of signals never filled)")
 
     return (pd.DataFrame({"equity": curve}, index=timeline).rename_axis("time"),
             pd.DataFrame(trades))
@@ -257,6 +352,12 @@ def main():
     p.add_argument("--slippage", type=float, default=0.001)
     p.add_argument("--fee", type=float, default=0.00055)
     p.add_argument("--funding", type=float, default=0.0001)
+    p.add_argument("--entry-mode", choices=["taker", "maker", "both"], default="taker",
+                   help="taker = market entry; maker = post-only limit; both = compare")
+    p.add_argument("--maker-fee", type=float, default=0.0002)
+    p.add_argument("--maker-offset", type=float, default=0.0,
+                   help="Rest this fraction away from close (0 = at the close)")
+    p.add_argument("--maker-timeout", type=int, default=3, help="Bars before an unfilled entry is cancelled")
     p.add_argument("--sweep", action="store_true", help="Grid search with 70/30 walk-forward split")
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out-prefix", default="breakout_backtest")
@@ -280,7 +381,27 @@ def main():
     )
     run_kwargs = dict(starting_equity=args.equity, fee_rate=args.fee,
                       slippage_pct=args.slippage, funding_rate_8h=args.funding,
-                      max_concurrent=args.max_concurrent)
+                      max_concurrent=args.max_concurrent,
+                      maker_fee=args.maker_fee, maker_offset_pct=args.maker_offset,
+                      maker_timeout_bars=args.maker_timeout)
+
+    if args.entry_mode == "both":
+        print(f"Comparing execution modes | taker: fee {args.fee*100:.4f}% + slip "
+              f"{args.slippage*100:.3f}%  vs  maker: fee {args.maker_fee*100:.4f}%, no slip, "
+              f"offset {args.maker_offset*100:.3f}%, {args.maker_timeout}-bar timeout\n")
+        results = {}
+        for mode in ("taker", "maker"):
+            eq, tr = run_breakout_backtest(symbol_data, cfg, entry_mode=mode, **run_kwargs)
+            results[mode] = summarize(eq, tr, args.equity, bars_per_year, quiet=True)
+            n_ent = len(tr[tr["action"] == "ENTER"]) if len(tr) else 0
+            m = results[mode]
+            print(f"  {mode:<6} return {m['total_return_%']:+8.2f}%  pf {m['pf']:.3f}  "
+                  f"dd {m.get('max_dd_%', 0):+7.2f}%  entries {n_ent:>4}  "
+                  f"trades {m['n_trades']:>4}  win {m['win_%']:.1f}%")
+        d_ret = results["maker"]["total_return_%"] - results["taker"]["total_return_%"]
+        d_pf  = results["maker"]["pf"] - results["taker"]["pf"]
+        print(f"\n  maker - taker:  return {d_ret:+.2f} pts   profit factor {d_pf:+.3f}")
+        return
 
     if args.sweep:
         grid = {
@@ -330,7 +451,7 @@ def main():
 
     print(f"Costs: fee {args.fee*100:.4f}% | slippage {args.slippage*100:.3f}% | "
           f"funding {args.funding*100:.4f}%/8h")
-    eq, tr = run_breakout_backtest(symbol_data, cfg, **run_kwargs)
+    eq, tr = run_breakout_backtest(symbol_data, cfg, entry_mode=args.entry_mode, **run_kwargs)
     summarize(eq, tr, args.equity, bars_per_year)
     tr.to_csv(f"{args.out_prefix}_trades.csv", index=False)
     eq.to_csv(f"{args.out_prefix}_equity.csv")
