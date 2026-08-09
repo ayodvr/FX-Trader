@@ -120,13 +120,33 @@ def generate_quant_signal(
     3. Calculates Stop-Loss (1.5x ATR), TP1 (1.5R), and TP2 (3.0R)
     """
     ind = compute_quant_indicators(df, cfg)
-    last = ind.iloc[-1]
-    prev = ind.iloc[-2]
+    return evaluate_quant_signal(
+        ind.iloc[-1], ind.iloc[-2], cfg,
+        current_position=current_position,
+        current_trail=current_trail,
+        btc_regime=evaluate_btc_regime(df_btc_1h),
+    )
 
+
+def evaluate_quant_signal(
+    last,
+    prev,
+    cfg: StrategyConfig,
+    current_position: int = 0,
+    current_trail: float | None = None,
+    btc_regime: int = 0,
+) -> QuantOutput:
+    """
+    The signal rules themselves, evaluated from two already-computed indicator rows.
+
+    Split out from generate_quant_signal so the backtest can compute indicators
+    once per symbol and then step through bars, instead of recomputing every EWM
+    on every bar (which is O(n^2) and far too slow across 30 symbols). Live code
+    goes through generate_quant_signal above; both share this one implementation,
+    so the rules cannot drift apart between backtest and live.
+    """
     fast, slow, trend = last["fast_ema"], last["slow_ema"], last["trend_ema"]
     atr, close, rsi, rvol = last["atr"], last["close"], last["rsi"], last["rvol"]
-
-    btc_regime = evaluate_btc_regime(df_btc_1h)
 
     crossed_up   = prev["fast_ema"] <= prev["slow_ema"] and fast > slow
     crossed_down = prev["fast_ema"] >= prev["slow_ema"] and fast < slow
