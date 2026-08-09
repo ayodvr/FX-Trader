@@ -385,8 +385,8 @@ class QuantScannerBot:
                     # Skip symbols where our size rounds below the exchange minimum --
                     # the order would just be rejected, and in live mode a rejected
                     # entry mid-sequence is worse than never starting one.
-                    if not CONFIG.dry_run and not self.exchange.meets_min_qty(symbol, sizing.qty):
-                        self.logger.info("[%s] Skipping: qty %.8f is below exchange minimum order size",
+                    if not CONFIG.dry_run and not self.exchange.meets_min_qty(symbol, sizing.qty, last_price):
+                        self.logger.info("[%s] Skipping: qty %.8f fails exchange minimum size/value",
                                          symbol, sizing.qty)
                         continue
 

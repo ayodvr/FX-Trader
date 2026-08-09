@@ -46,14 +46,20 @@ class BybitExchange:
         if symbol in self._instrument_cache:
             return self._instrument_cache[symbol]
 
-        info = {"tick_size": None, "qty_step": None, "min_qty": None}
+        info = {"tick_size": None, "qty_step": None, "min_qty": None,
+                "min_notional": Decimal("5")}
         try:
             resp = self.client.get_instruments_info(category=self.cfg.category, symbol=symbol)
             item = resp["result"]["list"][0]
+            lot = item["lotSizeFilter"]
             info = {
                 "tick_size": Decimal(str(item["priceFilter"]["tickSize"])),
-                "qty_step":  Decimal(str(item["lotSizeFilter"]["qtyStep"])),
-                "min_qty":   Decimal(str(item["lotSizeFilter"]["minOrderQty"])),
+                "qty_step":  Decimal(str(lot["qtyStep"])),
+                "min_qty":   Decimal(str(lot["minOrderQty"])),
+                # Bybit also enforces a minimum order VALUE (5 USDT on linear
+                # perps) independently of minOrderQty -- a size can clear the
+                # quantity floor and still be rejected on notional.
+                "min_notional": Decimal(str(lot.get("minNotionalValue") or "5")),
             }
             self._instrument_cache[symbol] = info
         except Exception as e:
@@ -84,14 +90,27 @@ class BybitExchange:
         snapped = (d / step).to_integral_value(rounding=ROUND_DOWN) * step
         return format(snapped.quantize(step), "f")
 
-    def meets_min_qty(self, symbol: str, qty: float) -> bool:
-        """True if qty clears the symbol's minimum order size after step-rounding."""
+    def meets_min_qty(self, symbol: str, qty: float, price: float | None = None) -> bool:
+        """True if qty clears the symbol's minimum order size after step-rounding.
+
+        When `price` is given, also checks Bybit's minimum order VALUE -- an order
+        can satisfy minOrderQty and still be rejected with ErrCode 110094 for
+        falling under the notional floor.
+        """
         info = self.get_instrument_info(symbol)
         step, min_qty = info["qty_step"], info["min_qty"]
         if step is None or min_qty is None:
             return qty > 0
         snapped = (Decimal(str(qty)) / step).to_integral_value(rounding=ROUND_DOWN) * step
-        return snapped >= min_qty
+        if snapped < min_qty:
+            return False
+        if price is not None:
+            notional = snapped * Decimal(str(price))
+            if notional < info.get("min_notional", Decimal("5")):
+                logger.info("%s: notional %.4f below minimum %s", symbol, notional,
+                            info.get("min_notional"))
+                return False
+        return True
 
     def get_klines(self, symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
         resp = self.client.get_kline(

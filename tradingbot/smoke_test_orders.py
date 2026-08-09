@@ -185,11 +185,13 @@ def test_altcoin_precision(exchange):
     print(f"\n  Live order test on {alt}:")
     try:
         px = exchange.get_klines(alt, "15", limit=2).iloc[-1]["close"]
-        info = exchange.get_instrument_info(alt)
-        qty = float(info["min_qty"]) * 2 if info["min_qty"] else 10.0
-        if not exchange.meets_min_qty(alt, qty):
-            print(f"    skipped: qty {qty} below minimum")
+        # Size by notional, not by quantity: Bybit enforces a 5 USDT minimum
+        # order VALUE separately from minOrderQty. Target ~$10 to clear it.
+        qty = 10.0 / px
+        if not exchange.meets_min_qty(alt, qty, px):
+            print(f"    skipped: qty {qty} fails minimum size/value for {alt}")
             return
+        print(f"    sizing {qty:.4f} {alt} (~${qty * px:.2f} notional) at price {px}")
         exchange.place_market_order(alt, "Buy", qty)
         time.sleep(2)
         pos = exchange.get_open_position(alt)
