@@ -188,11 +188,15 @@ def evaluate_quant_signal(
             btc_regime <= 0
         )
 
+        stop_mult = float(getattr(cfg, "quant_stop_atr_mult", 1.5))
+        tp1_r     = float(getattr(cfg, "quant_tp1_r", 1.5))
+        tp2_r     = float(getattr(cfg, "quant_tp2_r", 3.0))
+
         if long_confluence:
-            risk_dist = atr * 1.5
+            risk_dist = atr * stop_mult
             stop = close - risk_dist
-            tp1  = close + (risk_dist * 1.5)  # 1.5R target
-            tp2  = close + (risk_dist * 3.0)  # 3.0R runner target
+            tp1  = close + (risk_dist * tp1_r)
+            tp2  = close + (risk_dist * tp2_r)
             return QuantOutput(
                 Signal.LONG, stop_price=stop, tp1_price=tp1, tp2_price=tp2,
                 fast_ema=fast, slow_ema=slow, trend_ema=trend,
@@ -200,10 +204,10 @@ def evaluate_quant_signal(
             )
 
         if short_confluence:
-            risk_dist = atr * 1.5
+            risk_dist = atr * stop_mult
             stop = close + risk_dist
-            tp1  = close - (risk_dist * 1.5)
-            tp2  = close - (risk_dist * 3.0)
+            tp1  = close - (risk_dist * tp1_r)
+            tp2  = close - (risk_dist * tp2_r)
             return QuantOutput(
                 Signal.SHORT, stop_price=stop, tp1_price=tp1, tp2_price=tp2,
                 fast_ema=fast, slow_ema=slow, trend_ema=trend,

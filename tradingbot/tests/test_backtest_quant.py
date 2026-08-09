@@ -96,6 +96,29 @@ class TestRunQuantBacktest:
         assert eq_cost["equity"].iloc[-1] <= eq_free["equity"].iloc[-1]
 
 
+class TestWalkForwardSplit:
+    def test_splits_all_symbols_at_the_same_instant(self):
+        """A per-symbol row-count split would leak future data between symbols."""
+        from sweep_quant import split_data
+        data = {
+            "AAAUSDT": _klines(400),
+            "BBBUSDT": _klines(250),   # deliberately shorter history
+        }
+        is_data, oos_data, cut = split_data(data, 0.7)
+        for sym in data:
+            if len(is_data[sym]):
+                assert is_data[sym].index.max() <= cut
+            if len(oos_data[sym]):
+                assert oos_data[sym].index.min() > cut
+
+    def test_split_loses_no_rows(self):
+        from sweep_quant import split_data
+        data = {"AAAUSDT": _klines(400), "BBBUSDT": _klines(400)}
+        is_data, oos_data, _ = split_data(data, 0.7)
+        for sym in data:
+            assert len(is_data[sym]) + len(oos_data[sym]) == len(data[sym])
+
+
 class TestSummarize:
     def test_handles_zero_trades(self):
         eq = pd.DataFrame({"equity": [10_000.0, 10_000.0]},

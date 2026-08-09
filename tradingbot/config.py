@@ -42,6 +42,15 @@ class StrategyConfig:
     min_volume_spike: float = float(os.getenv("MIN_VOLUME_SPIKE", "1.5"))
     long_only: bool = os.getenv("LONG_ONLY", "false").lower() == "true"   # allow both Long and Short trades
 
+    # ── Quant Scanner exit structure (strategy/quant_strategy.py only) ────────
+    # Defaults reproduce the original hardcoded values. Exposed because the
+    # ratio between them decides the strategy's payoff profile: the stop risks
+    # full size while TP1 takes profit on half, so tp1_r must clear costs by a
+    # wide enough margin to pay for the losses that stop out at full size.
+    quant_stop_atr_mult: float = float(os.getenv("QUANT_STOP_ATR_MULT", "1.5"))
+    quant_tp1_r: float = float(os.getenv("QUANT_TP1_R", "1.5"))   # first target, in R
+    quant_tp2_r: float = float(os.getenv("QUANT_TP2_R", "3.0"))   # runner target, in R
+
 
 @dataclass
 class RiskConfig:

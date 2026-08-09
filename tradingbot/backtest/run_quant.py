@@ -106,56 +106,84 @@ def run_quant_backtest(
     funding_rate_8h: float = 0.0001,
     max_active_trades: int | None = None,
     max_hold_hours: float | None = None,
+    cfg=None,
+    risk_cfg=None,
+    quiet: bool = False,
 ):
-    cfg = CONFIG.strategy
-    risk = RiskManager(CONFIG.risk)
+    cfg = cfg if cfg is not None else CONFIG.strategy
+    risk = RiskManager(risk_cfg if risk_cfg is not None else CONFIG.risk)
     max_active = max_active_trades if max_active_trades is not None else CONFIG.scanner.max_active_trades
     max_hold   = max_hold_hours   if max_hold_hours   is not None else CONFIG.scanner.max_hold_hours
 
+    def _log(msg):
+        if not quiet:
+            print(msg)
+
     # Precompute indicators once per symbol -- the expensive part, done O(n) not O(n^2)
-    print("Computing indicators...")
+    _log("Computing indicators...")
     ind = {}
     for sym, df in symbol_data.items():
         if len(df) < 60:
-            print(f"  [skip] {sym}: only {len(df)} candles")
+            _log(f"  [skip] {sym}: only {len(df)} candles")
             continue
         ind[sym] = compute_quant_indicators(df, cfg)
     if not ind:
         raise ValueError("No symbols had enough data to backtest")
 
     # Unified, ordered timeline across every symbol
-    timeline = sorted(set().union(*(df.index for df in ind.values())))
+    timeline = pd.DatetimeIndex(sorted(set().union(*(df.index for df in ind.values()))))
     # Regime lookup: last CLOSED 1h candle at or before each bar
-    regime_aligned = regime.reindex(pd.DatetimeIndex(timeline), method="ffill").fillna(0).astype(int)
+    regime_arr = regime.reindex(timeline, method="ffill").fillna(0).astype(int).to_numpy()
+
+    # Reindex every symbol onto the shared timeline and drop to numpy. Pandas
+    # .loc/.get_loc per bar dominates runtime otherwise -- this is what makes
+    # the engine fast enough to sweep parameters with.
+    _COLS = ("close", "high", "low", "fast_ema", "slow_ema", "trend_ema", "atr", "rsi", "rvol")
+    arr: dict[str, dict] = {}
+    first_valid: dict[str, int] = {}
+    for sym, df_ind in ind.items():
+        r = df_ind.reindex(timeline)
+        cols = {c: r[c].to_numpy(dtype=float) for c in _COLS}
+        cols["valid"] = r["close"].notna().to_numpy()
+        arr[sym] = cols
+        vidx = np.flatnonzero(cols["valid"])
+        first_valid[sym] = int(vidx[0]) if len(vidx) else len(timeline)
+
+    def row_at(sym: str, i: int) -> dict:
+        a = arr[sym]
+        return {c: a[c][i] for c in _COLS}
+
+    hours   = timeline.hour.to_numpy()
+    minutes = timeline.minute.to_numpy()
 
     equity = starting_equity
     open_trades: dict[str, dict] = {}
     trades: list[dict] = []
-    equity_curve: list[dict] = []
+    equity_curve = np.empty(len(timeline), dtype=float)
     skipped_max_active = 0
 
     warmup = 60  # candles before a symbol is eligible, so EWMs have settled
 
-    print(f"Simulating {len(timeline):,} bars across {len(ind)} symbols "
-          f"(max {max_active} concurrent, {max_hold}h max hold)...")
+    _log(f"Simulating {len(timeline):,} bars across {len(ind)} symbols "
+         f"(max {max_active} concurrent, {max_hold}h max hold)...")
 
-    for ts in timeline:
-        btc_regime = int(regime_aligned.loc[ts])
+    for i in range(len(timeline)):
+        ts = timeline[i]
+        btc_regime = int(regime_arr[i])
 
         # ── Funding on open notional ─────────────────────────────────────────
-        if ts.hour in _FUNDING_HOURS and ts.minute == 0:
+        if hours[i] in _FUNDING_HOURS and minutes[i] == 0:
             for sym, tr in open_trades.items():
-                row = ind[sym].loc[ts] if ts in ind[sym].index else None
-                if row is not None:
-                    equity -= tr["qty_open"] * row["close"] * funding_rate_8h
+                if arr[sym]["valid"][i]:
+                    equity -= tr["qty_open"] * arr[sym]["close"][i] * funding_rate_8h
 
         # ── Manage open positions ────────────────────────────────────────────
         for sym in list(open_trades.keys()):
-            if ts not in ind[sym].index:
+            a = arr[sym]
+            if not a["valid"][i]:
                 continue
             tr   = open_trades[sym]
-            row  = ind[sym].loc[ts]
-            high, low, close = row["high"], row["low"], row["close"]
+            high, low, close = a["high"][i], a["low"][i], a["close"][i]
             is_long = tr["side"] == "Buy"
             factor  = 1.0 if is_long else -1.0
 
@@ -210,10 +238,9 @@ def run_quant_backtest(
                 continue
 
             # 5. Strategy flip
-            idx = ind[sym].index.get_loc(ts)
-            if idx >= 1:
+            if i >= 1 and a["valid"][i - 1]:
                 out = evaluate_quant_signal(
-                    row, ind[sym].iloc[idx - 1], cfg,
+                    row_at(sym, i), row_at(sym, i - 1), cfg,
                     current_position=1 if is_long else -1,
                     current_trail=None,
                     btc_regime=btc_regime,
@@ -224,27 +251,27 @@ def run_quant_backtest(
 
         # ── Look for entries ─────────────────────────────────────────────────
         if risk.kill_switch_active(now=ts):
-            equity_curve.append({"time": ts, "equity": equity})
+            equity_curve[i] = equity
             continue
 
-        for sym, sym_ind in ind.items():
-            if sym in open_trades or ts not in sym_ind.index:
+        for sym in arr:
+            a = arr[sym]
+            if sym in open_trades or not a["valid"][i] or not a["valid"][i - 1]:
                 continue
-            idx = sym_ind.index.get_loc(ts)
-            if idx < warmup:
+            if i - first_valid[sym] < warmup:
                 continue
             if len(open_trades) >= max_active:
                 skipped_max_active += 1
                 break
 
             out = evaluate_quant_signal(
-                sym_ind.iloc[idx], sym_ind.iloc[idx - 1], cfg,
+                row_at(sym, i), row_at(sym, i - 1), cfg,
                 current_position=0, btc_regime=btc_regime,
             )
             if out.signal not in (Signal.LONG, Signal.SHORT):
                 continue
 
-            close = sym_ind.iloc[idx]["close"]
+            close = a["close"][i]
             # Scanner passes open_positions=0 -- it enforces its own concurrency
             # cap via max_active_trades rather than RiskConfig.max_open_positions.
             sizing = risk.size_position(equity, close, out.stop_price, open_positions=0, now=ts)
@@ -272,12 +299,12 @@ def run_quant_backtest(
                 "pnl": None, "fee": fee, "duration_h": None,
             })
 
-        equity_curve.append({"time": ts, "equity": equity})
+        equity_curve[i] = equity
 
-    eq_df = pd.DataFrame(equity_curve).set_index("time")
+    eq_df = pd.DataFrame({"equity": equity_curve}, index=timeline).rename_axis("time")
     trades_df = pd.DataFrame(trades)
     if skipped_max_active:
-        print(f"  ({skipped_max_active:,} signals skipped: max concurrent trades reached)")
+        _log(f"  ({skipped_max_active:,} signals skipped: max concurrent trades reached)")
     return eq_df, trades_df
 
 
