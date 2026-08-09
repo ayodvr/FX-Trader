@@ -44,3 +44,4 @@ sweep_quant_results.csv
 sweep_quant_zerocost.csv
 quant_backtest_*.csv
 breakout_backtest_*.csv
+funding_analysis.csv
