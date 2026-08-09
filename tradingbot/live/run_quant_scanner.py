@@ -219,16 +219,24 @@ class QuantScannerBot:
         self.risk.record_realized_pnl(pnl, equity, now=datetime.now())
         self.alerter.record_trade(pnl)
 
-    def _place_exchange_stop(self, symbol: str, side: str, qty: float, stop_price: float):
-        """Place a Stop-Market order on the exchange and cache its order ID."""
+    def _place_exchange_stop(self, symbol: str, side: str, qty: float, stop_price: float) -> bool:
+        """Place a Stop-Market order on the exchange and cache its order ID.
+
+        Returns True only if the exchange accepted the stop -- callers use this
+        to decide whether the position is actually protected.
+        """
         try:
             resp = self.exchange.place_stop_order(symbol, side, qty, stop_price)
             order_id = resp.get("result", {}).get("orderId") if resp else None
             if order_id:
                 self._stop_order_ids[symbol] = order_id
                 self.logger.info("[%s] Exchange SL placed @ %s (orderId=%s)", symbol, fmt_price(stop_price), order_id)
+                return True
+            self.logger.error("[%s] Stop order response had no orderId: %s", symbol, resp)
+            return False
         except Exception as e:
             self.logger.error("[%s] Failed to place exchange stop order: %s", symbol, e)
+            return False
 
     def _cancel_exchange_stop(self, symbol: str):
         """Cancel the cached exchange stop order for a symbol."""
@@ -374,6 +382,14 @@ class QuantScannerBot:
                         self.logger.info("[%s] Trade sizing rejected: %s", symbol, sizing.reason)
                         continue
 
+                    # Skip symbols where our size rounds below the exchange minimum --
+                    # the order would just be rejected, and in live mode a rejected
+                    # entry mid-sequence is worse than never starting one.
+                    if not CONFIG.dry_run and not self.exchange.meets_min_qty(symbol, sizing.qty):
+                        self.logger.info("[%s] Skipping: qty %.8f is below exchange minimum order size",
+                                         symbol, sizing.qty)
+                        continue
+
                     side     = "Buy" if out.signal == Signal.LONG else "Sell"
                     stop_side = "Sell" if side == "Buy" else "Buy"
                     msg = (
@@ -390,7 +406,16 @@ class QuantScannerBot:
                     if not CONFIG.dry_run:
                         self.exchange.set_leverage(symbol, self.leverage)
                         self.exchange.place_market_order(symbol, side, sizing.qty)
-                        self._place_exchange_stop(symbol, stop_side, sizing.qty, out.stop_price)
+                        if not self._place_exchange_stop(symbol, stop_side, sizing.qty, out.stop_price):
+                            # Position is open with no protective stop -- close it
+                            # immediately rather than tracking an unprotected trade.
+                            self.logger.error("[%s] Stop placement failed after entry -- emergency closing", symbol)
+                            self.alerter.send(
+                                f"🚨 [{symbol}] CRITICAL: stop-loss placement failed after entry "
+                                f"-- emergency closing position"
+                            )
+                            self.exchange.close_all_positions(symbol)
+                            continue
 
                     self.active_scanner_trades[symbol] = {
                         "side":        side,

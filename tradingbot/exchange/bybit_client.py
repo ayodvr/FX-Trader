@@ -6,6 +6,8 @@ Keeping this separate from strategy/risk means swapping exchanges later
 """
 import logging
 import time
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+
 import pandas as pd
 from pybit.unified_trading import HTTP
 
@@ -23,6 +25,73 @@ class BybitExchange:
             api_secret=cfg.api_secret,
             domain="bytick",
         )
+        # symbol -> {tick_size, qty_step, min_qty}; instrument specs never change
+        # mid-session, so fetch once per symbol and reuse.
+        self._instrument_cache: dict[str, dict] = {}
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Instrument precision
+    #
+    # Every symbol has its own tickSize (price increment) and qtyStep (size
+    # increment). Hardcoding round(price, 2) works for BTCUSDT (~$64,000) but
+    # destroys sub-dollar altcoins: a 1000PEPE stop at 0.002886 rounds to 0.0
+    # and is rejected outright, and a COTI stop at 0.0152 rounds to 0.02 --
+    # above the entry price, i.e. the wrong side of the trade. The scanner
+    # trades whatever the top-30 by volume happen to be, so it must ask the
+    # exchange for each symbol's real precision.
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def get_instrument_info(self, symbol: str) -> dict:
+        """Fetch (and cache) tickSize / qtyStep / minOrderQty for a symbol."""
+        if symbol in self._instrument_cache:
+            return self._instrument_cache[symbol]
+
+        info = {"tick_size": None, "qty_step": None, "min_qty": None}
+        try:
+            resp = self.client.get_instruments_info(category=self.cfg.category, symbol=symbol)
+            item = resp["result"]["list"][0]
+            info = {
+                "tick_size": Decimal(str(item["priceFilter"]["tickSize"])),
+                "qty_step":  Decimal(str(item["lotSizeFilter"]["qtyStep"])),
+                "min_qty":   Decimal(str(item["lotSizeFilter"]["minOrderQty"])),
+            }
+            self._instrument_cache[symbol] = info
+        except Exception as e:
+            # Don't cache failures -- a transient error shouldn't poison every
+            # later order for this symbol.
+            logger.warning("Could not fetch instrument info for %s: %s", symbol, e)
+        return info
+
+    def format_price(self, symbol: str, price: float) -> str:
+        """Round a price to the symbol's tickSize and render it without exponent notation."""
+        tick = self.get_instrument_info(symbol)["tick_size"]
+        if tick is None or tick <= 0:
+            logger.warning("No tickSize for %s -- falling back to 2dp, which may be wrong", symbol)
+            return f"{price:.2f}"
+        d = Decimal(str(price))
+        snapped = (d / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
+        # format(..., 'f') avoids str()'s scientific notation (e.g. '1e-06'),
+        # which Bybit rejects.
+        return format(snapped.quantize(tick), "f")
+
+    def format_qty(self, symbol: str, qty: float) -> str:
+        """Round a quantity DOWN to the symbol's qtyStep (never round up past what we hold)."""
+        step = self.get_instrument_info(symbol)["qty_step"]
+        if step is None or step <= 0:
+            logger.warning("No qtyStep for %s -- sending qty unrounded", symbol)
+            return format(Decimal(str(qty)), "f")
+        d = Decimal(str(qty))
+        snapped = (d / step).to_integral_value(rounding=ROUND_DOWN) * step
+        return format(snapped.quantize(step), "f")
+
+    def meets_min_qty(self, symbol: str, qty: float) -> bool:
+        """True if qty clears the symbol's minimum order size after step-rounding."""
+        info = self.get_instrument_info(symbol)
+        step, min_qty = info["qty_step"], info["min_qty"]
+        if step is None or min_qty is None:
+            return qty > 0
+        snapped = (Decimal(str(qty)) / step).to_integral_value(rounding=ROUND_DOWN) * step
+        return snapped >= min_qty
 
     def get_klines(self, symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
         resp = self.client.get_kline(
@@ -111,27 +180,31 @@ class BybitExchange:
 
     def place_market_order(self, symbol: str, side: str, qty: float, reduce_only: bool = False) -> dict:
         """side: 'Buy' or 'Sell'"""
-        logger.info("Placing %s market order: %s qty=%.6f reduce_only=%s", side, symbol, qty, reduce_only)
+        qty_str = self.format_qty(symbol, qty)
+        logger.info("Placing %s market order: %s qty=%s reduce_only=%s", side, symbol, qty_str, reduce_only)
         resp = self.client.place_order(
             category=self.cfg.category,
             symbol=symbol,
             side=side,
             orderType="Market",
-            qty=str(qty),
+            qty=qty_str,
             reduceOnly=reduce_only,
         )
         return resp
 
     def place_limit_order(self, symbol: str, side: str, qty: float, price: float, reduce_only: bool = False) -> dict:
         """Place a Limit order at a specific price."""
-        logger.info("Placing %s limit order: %s qty=%.6f price=%.2f reduce_only=%s", side, symbol, qty, price, reduce_only)
+        qty_str = self.format_qty(symbol, qty)
+        price_str = self.format_price(symbol, price)
+        logger.info("Placing %s limit order: %s qty=%s price=%s reduce_only=%s",
+                    side, symbol, qty_str, price_str, reduce_only)
         resp = self.client.place_order(
             category=self.cfg.category,
             symbol=symbol,
             side=side,
             orderType="Limit",
-            qty=str(qty),
-            price=str(round(price, 2)),
+            qty=qty_str,
+            price=price_str,
             reduceOnly=reduce_only,
         )
         return resp
@@ -144,13 +217,16 @@ class BybitExchange:
         Falling move); a Buy closes a short and sits above price (fires on a Rising
         move). Bybit's triggerDirection: 1 = Rising, 2 = Falling.
         """
+        qty_str = self.format_qty(symbol, qty)
+        trigger_str = self.format_price(symbol, trigger_price)
+        logger.info("Placing %s stop order: %s qty=%s trigger=%s", side, symbol, qty_str, trigger_str)
         resp = self.client.place_order(
             category=self.cfg.category,
             symbol=symbol,
             side=side,
             orderType="Market",
-            qty=str(qty),
-            triggerPrice=str(round(trigger_price, 2)),
+            qty=qty_str,
+            triggerPrice=trigger_str,
             reduceOnly=True,
             triggerDirection=2 if side == "Sell" else 1,
         )

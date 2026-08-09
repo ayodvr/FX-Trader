@@ -153,10 +153,69 @@ def test_full_lifecycle(exchange):
             print("FAIL: leftover position or orphaned order(s) after exit!")
 
 
+def test_altcoin_precision(exchange):
+    """
+    The scanner trades whatever the top-30 by volume are -- mostly sub-dollar
+    altcoins, where the old hardcoded round(price, 2) produced invalid or
+    wrong-side stop prices. Verifies price/qty formatting against each symbol's
+    real tickSize/qtyStep, then places a live stop on one to prove it.
+    """
+    print("=== TEST 4: altcoin price/qty precision ===")
+    alt_symbols = ["DOGEUSDT", "1000PEPEUSDT", "WIFUSDT"]
+
+    for sym in alt_symbols:
+        info = exchange.get_instrument_info(sym)
+        if info["tick_size"] is None:
+            print(f"  {sym}: FAIL -- could not fetch instrument info")
+            continue
+        try:
+            px = exchange.get_klines(sym, "15", limit=2).iloc[-1]["close"]
+        except Exception as e:
+            print(f"  {sym}: skipped ({e})")
+            continue
+        stop_px = px * 0.99
+        print(f"  {sym}: price={px} tick={info['tick_size']} qty_step={info['qty_step']} "
+              f"min_qty={info['min_qty']}")
+        print(f"    stop {stop_px:.8f} -> formatted '{exchange.format_price(sym, stop_px)}' "
+              f"(old round(x,2) would send '{round(stop_px, 2)}')")
+
+    # Prove it end-to-end on the cheapest of the three: a real position with a
+    # real stop, which is exactly what the old rounding made impossible.
+    alt = "DOGEUSDT"
+    print(f"\n  Live order test on {alt}:")
+    try:
+        px = exchange.get_klines(alt, "15", limit=2).iloc[-1]["close"]
+        info = exchange.get_instrument_info(alt)
+        qty = float(info["min_qty"]) * 2 if info["min_qty"] else 10.0
+        if not exchange.meets_min_qty(alt, qty):
+            print(f"    skipped: qty {qty} below minimum")
+            return
+        exchange.place_market_order(alt, "Buy", qty)
+        time.sleep(2)
+        pos = exchange.get_open_position(alt)
+        print(f"    position: size={pos.get('size') if pos else None} avgPrice={pos.get('avgPrice') if pos else None}")
+
+        resp = exchange.place_stop_order(alt, "Sell", qty, px * 0.99)
+        oid = resp.get("result", {}).get("orderId") if resp else None
+        print(f"    PASS: altcoin stop order accepted, orderId={oid}" if oid
+              else f"    FAIL: altcoin stop order: {resp}")
+    except Exception as e:
+        print(f"    FAIL: altcoin order path raised: {e}")
+    finally:
+        exchange.cancel_all_orders(alt)
+        exchange.close_all_positions(alt)
+        time.sleep(2)
+        pos = exchange.get_open_position(alt)
+        remaining = exchange.get_all_open_orders(alt)
+        print(f"    cleanup: position {'FLAT' if pos is None else 'STILL OPEN'}, "
+              f"{len(remaining)} open order(s)")
+
+
 if __name__ == "__main__":
     _assert_safe()
     exchange = BybitExchange(CONFIG.exchange)
     test_happy_path(exchange)
     test_failsafe_path(exchange)
     test_full_lifecycle(exchange)
+    test_altcoin_precision(exchange)
     print("Done. Review PASS/FAIL lines above.")
