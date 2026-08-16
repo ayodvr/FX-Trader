@@ -74,6 +74,17 @@ class RiskManager:
                 reason=f"Stop distance {stop_pct*100:.3f}% < minimum {min_stop_pct*100:.3f}% — too tight for leverage"
             )
 
+        # A stop wider than the liquidation distance is not a stop -- the position
+        # gets liquidated before price ever reaches it. Usually a symptom of a
+        # corrupt ATR from a bad candle rather than a real volatility regime.
+        max_stop_pct = getattr(self.cfg, "max_stop_pct", 0.15)
+        if max_stop_pct > 0 and stop_pct > max_stop_pct:
+            return SizingResult(
+                False,
+                reason=f"Stop distance {stop_pct*100:.2f}% > maximum {max_stop_pct*100:.2f}% — "
+                       f"beyond liquidation range at {self.cfg.leverage}x (likely bad ATR)"
+            )
+
         dollar_risk = equity * self.cfg.account_risk_per_trade
         qty = dollar_risk / stop_distance
 

@@ -60,6 +60,11 @@ class RiskConfig:
     max_open_positions: int = int(os.getenv("MAX_OPEN_POSITIONS", "1"))          # this bot trades one symbol/position at a time
     leverage: int = int(os.getenv("LEVERAGE", "5"))                              # 5X — safe default for live altcoin futures
     min_stop_pct: float = float(os.getenv("MIN_STOP_PCT", "0.003"))              # reject trades where stop < 0.3% from entry (too tight at leverage)
+    # Reject absurdly WIDE stops too. A stop further away than the liquidation
+    # distance can never fire -- the position is liquidated first -- so it is not
+    # a stop at all. At 5x, liquidation is roughly 20% adverse; a bad ATR (from a
+    # data spike) once produced a 57% stop on a live signal, which is unusable.
+    max_stop_pct: float = float(os.getenv("MAX_STOP_PCT", "0.15"))
 
 
 @dataclass

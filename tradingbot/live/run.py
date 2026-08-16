@@ -66,6 +66,32 @@ def _setup_logging(symbol: str) -> logging.Logger:
     return logger
 
 
+def scanner_is_active(max_age_sec: int = 900) -> tuple[bool, str]:
+    """
+    Detect a running Quant Scanner sharing this exchange account.
+
+    Both bots read position state from the exchange rather than from memory, so
+    neither can tell its own position from the other's. Running them together on
+    one account means this bot will adopt scanner positions and try to manage
+    them -- replacing their stops, and issuing reduce-only closes for size that
+    is no longer there. That produced a stream of 110093/110017 errors in live
+    logs before this check existed.
+    """
+    state_file = Path("state") / "scanner_state.json"
+    if not state_file.exists():
+        return False, ""
+    try:
+        data = json.loads(state_file.read_text())
+        last = datetime.fromisoformat(data["last_update"])
+        age = (datetime.now() - last).total_seconds()
+        if age <= max_age_sec:
+            held = ", ".join(data.get("active_trades", {})) or "none"
+            return True, f"last update {age:.0f}s ago, holding: {held}"
+    except Exception:
+        pass
+    return False, ""
+
+
 def _write_state(symbol: str, state: dict):
     """Write bot state to state/<SYMBOL>.json for the dashboard to read."""
     state_dir = Path("state")
@@ -339,10 +365,25 @@ if __name__ == "__main__":
     parser.add_argument("--fast-ema", type=int,   dest="fast_ema", help="Fast EMA period")
     parser.add_argument("--slow-ema", type=int,   dest="slow_ema", help="Slow EMA period")
     parser.add_argument("--risk",     type=float, help="Account risk per trade, e.g. 0.005")
+    parser.add_argument("--allow-alongside-scanner", action="store_true",
+                        help="Start even if the Quant Scanner is running on this account "
+                             "(they will fight over the same positions)")
     args = parser.parse_args()
 
     _apply_cli_overrides(args)
     symbol = CONFIG.strategy.symbol
     logger = _setup_logging(symbol)
-    bot    = LiveBot(logger)
+
+    active, detail = scanner_is_active()
+    if active and not args.allow_alongside_scanner:
+        logger.error(
+            "Quant Scanner appears to be running on this account (%s).\n"
+            "Both bots read positions from the exchange and cannot tell whose is whose, "
+            "so running them together makes this bot adopt and mismanage scanner trades.\n"
+            "Stop the scanner (pm2 stop quant-scanner), or pass --allow-alongside-scanner "
+            "if you are deliberately trading separate accounts.", detail,
+        )
+        sys.exit(1)
+
+    bot = LiveBot(logger)
     bot.run_forever()

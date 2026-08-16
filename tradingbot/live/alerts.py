@@ -63,13 +63,17 @@ class Alerter:
 
     def send_daily_summary(self):
         """
-        Send a recap of the current day's closed trades.
-        Safe to call repeatedly — debouncing prevents duplicate messages.
+        Send a recap of the day just finished.
+
+        Deliberately does NOT rotate first. Callers fire this at the turn of the
+        day, so rotating here would reset the counters and then report the fresh,
+        empty ones -- which is exactly what happened: every summary sent said
+        "No trades closed today" no matter how many trades had closed. Rotation
+        happens on the next record_trade() instead.
         """
-        self._rotate_if_new_day()
         d = self._daily
         if d["trades"] == 0:
-            msg = "📊 [DAILY SUMMARY] No trades closed today."
+            msg = f"📊 [DAILY SUMMARY] {d['date']} — no trades closed."
         else:
             win_rate = (d["wins"] / d["trades"] * 100) if d["trades"] > 0 else 0.0
             pnl_emoji = "✅" if d["total_pnl"] >= 0 else "❌"
